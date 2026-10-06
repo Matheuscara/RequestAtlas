@@ -31,7 +31,7 @@ Princípios: “não identificado como bot” **não** é chamado de humano; req
 ```yaml
 services:
   logsnpm:
-    image: ghcr.io/SEU_USUARIO/logsnpm:latest   # ou build: .
+    image: ghcr.io/matheuscara/logsnpm:latest   # ou build: .
     restart: unless-stopped
     ports: ["7881:7881"]
     environment:
@@ -53,7 +53,7 @@ Veja `docker-compose.yml` para o exemplo completo (GeoIP e arquivo de configura�
 ### Nativo (mesma máquina/LXC do NPM)
 
 ```sh
-git clone https://github.com/SEU_USUARIO/logsNPM /opt/logsnpm
+git clone https://github.com/matheuscara/logsNPM /opt/logsnpm
 cp /opt/logsnpm/config.example.toml /etc/logsnpm/logsnpm.toml   # ajuste
 LOGSNPM_CONFIG=/etc/logsnpm/logsnpm.toml python3 -m logsnpm check
 cp /opt/logsnpm/deploy/logsnpm.service /etc/systemd/system/ && systemctl enable --now logsnpm

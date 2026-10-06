@@ -3,7 +3,7 @@
 services:
   logsnpm:
     build: .
-    # image: ghcr.io/SEU_USUARIO/logsnpm:latest
+    # image: ghcr.io/matheuscara/logsnpm:latest
     container_name: logsnpm
     restart: unless-stopped
     ports:
