@@ -1,5 +1,5 @@
 "use strict";
-/* logsNPM — painel de análise dos access logs do Nginx Proxy Manager.
+/* RequestAtlas — painel de análise dos access logs do Nginx Proxy Manager.
    Todo texto vindo do log (caminhos, UAs, referrers, hosts) passa por esc(): é dado de terceiros.
    Textos da interface passam por t(): a chave é o texto em pt-BR; i18n.js traz as traduções. */
 
@@ -165,7 +165,7 @@ function readHash() {
   const [path, qs] = raw.split("?");
   const q = new URLSearchParams(qs || "");
   S.page = pageFromPath(path || "");
-  const saved = JSON.parse(localStorage.getItem("logsnpm-f") || "{}");
+  const saved = JSON.parse(localStorage.getItem("requestatlas-f") || "{}");
   for (const k of FILTER_KEYS) S.f[k] = q.has(k) ? q.get(k) : (k === "tz" || k === "p" ? saved[k] || "" : "");
   if (!S.f.p) S.f.p = S.cfg.default_period;
   if (!/^[\w+\-/]+$/.test(S.f.tz || "") || !S.meta.tzs.some((x) => x.id === S.f.tz)) S.f.tz = S.cfg.default_tz;
@@ -174,7 +174,7 @@ function go(page, patch = {}) {
   Object.assign(S.f, patch);
   const q = new URLSearchParams();
   for (const k of FILTER_KEYS) if (S.f[k] && !(k === "p" && S.f[k] === S.cfg.default_period) && !(k === "tz" && S.f[k] === S.cfg.default_tz)) q.set(k, S.f[k]);
-  localStorage.setItem("logsnpm-f", JSON.stringify({ tz: S.f.tz, p: S.f.p }));
+  localStorage.setItem("requestatlas-f", JSON.stringify({ tz: S.f.tz, p: S.f.p }));
   const h = `#/${ROUTES[page]}${q.toString() ? "?" + q : ""}`;
   if (location.hash === h) render(); else location.hash = h;
 }
@@ -195,7 +195,7 @@ function applyBranding() {
 /* ------------------------------------------------------------------ aparência: prévia local
    Sobrepõe título, subtítulo, destaque e cores do /api/config só neste navegador (localStorage).
    S.look guarda apenas o que difere do servidor; nada é enviado. O trecho TOML exportado é o caminho para tornar permanente. */
-const LOOK_KEY = "logsnpm-look";
+const LOOK_KEY = "requestatlas-look";
 const LOOK_GROUPS = () => [
   [t("Tipos de requisição"), ["html", "static", "api", "other"]],
   [t("Classificação do User-Agent"), ["bot", "nonbot", "noua"]],
@@ -283,8 +283,8 @@ function lookToml() {
   const plain = (v) => typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string"));
   const note = (s) => `# ${s.replace(/[\u0000-\u001f\u007f]+/g, " ")}`;
   return [
-    note(`logsNPM · ${t("aparência exportada da prévia local")} · ${new Date().toISOString().slice(0, 10)}`),
-    note(t("Mescle estas chaves nas tabelas [ui] e [ui.colors] do seu logsnpm.toml (o TOML não aceita a mesma tabela duas vezes) e reinicie o logsNPM.")),
+    note(`RequestAtlas · ${t("aparência exportada da prévia local")} · ${new Date().toISOString().slice(0, 10)}`),
+    note(t("Mescle estas chaves nas tabelas [ui] e [ui.colors] do seu requestatlas.toml (o TOML não aceita a mesma tabela duas vezes) e reinicie o RequestAtlas.")),
     "", "[ui]",
     `title = ${tomlStr(L.title)}`,
     `subtitle = ${tomlStr(L.subtitle)}`,
@@ -336,7 +336,7 @@ function openLook() {
     <header class="ap-h"><h2 id="look-h">${t("Aparência")}</h2>
       <button type="button" class="icon-btn" data-close title="${esc(t("Fechar"))}" aria-label="${esc(t("Fechar"))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
     <div class="ap-b">
-      ${notice(t("<b>Prévia local, só neste navegador.</b> Os ajustes ficam guardados no localStorage e <b>não alteram a configuração do servidor</b> nem o que outras pessoas veem. Para torná-los permanentes, baixe o trecho TOML e mescle no logsnpm.toml."))}
+      ${notice(t("<b>Prévia local, só neste navegador.</b> Os ajustes ficam guardados no localStorage e <b>não alteram a configuração do servidor</b> nem o que outras pessoas veem. Para torná-los permanentes, baixe o trecho TOML e mescle no requestatlas.toml."))}
       <fieldset><legend>${t("Marca")}</legend>
         <label class="ap-field"><span>${t("Título")}</span><input id="ap-title" data-text="title" maxlength="60" autocomplete="off" spellcheck="false" placeholder="${esc(lookOf({}).title)}" autofocus></label>
         <label class="ap-field"><span>${t("Subtítulo")}</span><input id="ap-sub" data-text="subtitle" maxlength="120" autocomplete="off" placeholder="${esc(t("análise de tráfego do NPM"))}"></label>
@@ -363,7 +363,7 @@ function openLook() {
   dlg.onclick = (e) => {
     if ((e.target === dlg && down === dlg) || e.target.closest("[data-close]")) dlg.close();
     else if (e.target.closest("[data-reset]")) { previewLook({}); fillLookForm(dlg); syncLookForm(dlg); }
-    else if (e.target.closest("[data-export]")) saveFile("logsnpm-ui.toml", lookToml(), "application/toml");
+    else if (e.target.closest("[data-export]")) saveFile("requestatlas-ui.toml", lookToml(), "application/toml");
   };
   dlg.onclose = () => $("#look-btn").focus();
   dlg.showModal();
@@ -571,7 +571,7 @@ function caveat() {
     ${t("Bots são reconhecidos apenas pelo User-Agent (que pode ser falsificado). O restante aparece como “não identificado como bot” — inclui navegadores reais e robôs que não se declaram.")}`);
 }
 function reindexWarning() {
-  return S.meta.reindex_needed ? notice(t("As regras de classificação mudaram desde a última ingestão. Rode <code>logsnpm reindex</code> para reprocessar os logs com as regras novas."), "warn") : "";
+  return S.meta.reindex_needed ? notice(t("As regras de classificação mudaram desde a última ingestão. Rode <code>requestatlas reindex</code> para reprocessar os logs com as regras novas."), "warn") : "";
 }
 function card(title, sub, body, actions = "", cls = "") {
   return `<section class="card ${cls}"><div class="card-h"><div><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ""}</div>${actions}</div><div class="card-b">${body}</div></section>`;
@@ -973,7 +973,7 @@ async function pagePages() {
           const cols = ["host", "path", "kind", "hits", "bot", "s2xx", "s3xx", "s4xx", "s5xx", "bytes"];
           const cell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
           const csv = [cols.join(","), ...all.rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
-          saveFile(`logsnpm-paginas-${localDateStr(range().from)}_${localDateStr(range().to - 1)}.csv`, csv, "text/csv;charset=utf-8");
+          saveFile(`requestatlas-paginas-${localDateStr(range().from)}_${localDateStr(range().to - 1)}.csv`, csv, "text/csv;charset=utf-8");
         } catch (e) { toast(e.message); }
       };
     },

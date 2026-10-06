@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Gera logs fictícios no formato do Nginx Proxy Manager + um banco do NPM mínimo.
 
-Uso: python scripts/gen_demo.py /tmp/logsnpm-demo [--days 14]
-Depois: LOGSNPM_LOG_DIR=/tmp/logsnpm-demo/logs LOGSNPM_NPM_DB=/tmp/logsnpm-demo/database.sqlite \
-        LOGSNPM_DATA_DIR=/tmp/logsnpm-demo/data python -m logsnpm serve
+Uso: python scripts/gen_demo.py /tmp/requestatlas-demo [--days 14]
+Depois: REQUESTATLAS_LOG_DIR=/tmp/requestatlas-demo/logs REQUESTATLAS_NPM_DB=/tmp/requestatlas-demo/database.sqlite \
+        REQUESTATLAS_DATA_DIR=/tmp/requestatlas-demo/data python -m requestatlas serve
 
 Inclui: crawler de IA agressivo que é bloqueado no meio do período (403 por regra), buscadores,
 scanners, um pico de 5xx, rotação semanal em .gz e uma linha malformada.
@@ -156,7 +156,7 @@ def main():
     c.execute("INSERT INTO proxy_host VALUES(6, ?, 'http', '10.0.0.40', 8096, 0, 0, 0, 0, '')", (json.dumps(["media.example.com"]),))
     c.commit()
     c.close()
-    with open(os.path.join(a.out, "logsnpm.toml"), "w") as f:
+    with open(os.path.join(a.out, "requestatlas.toml"), "w") as f:
         f.write(f"""[paths]
 log_dir = "{logs}"
 npm_db = "{dbp}"
@@ -183,8 +183,8 @@ title = "GPTBot bloqueado (403)"
 detail = "Regra no Advanced do proxy host 1."
 """)
     total = sum(len(v) for v in per_site.values())
-    print(f"{total} linhas em {logs}\nconfig: {os.path.join(a.out, 'logsnpm.toml')}\n"
-          f"rode: python -m logsnpm serve --config {os.path.join(a.out, 'logsnpm.toml')}")
+    print(f"{total} linhas em {logs}\nconfig: {os.path.join(a.out, 'requestatlas.toml')}\n"
+          f"rode: python -m requestatlas serve --config {os.path.join(a.out, 'requestatlas.toml')}")
 
 
 if __name__ == "__main__":

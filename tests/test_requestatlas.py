@@ -1,4 +1,4 @@
-"""Testes do logsNPM (stdlib unittest): `python -m unittest discover -s tests`."""
+"""Testes do RequestAtlas (stdlib unittest): `python -m unittest discover -s tests`."""
 import base64
 import json
 import gzip
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from helpers import Env, proxy_line, standard_line  # noqa: E402
-from logsnpm import api, classify, config, ingest, store  # noqa: E402
+from requestatlas import api, classify, config, ingest, store  # noqa: E402
 
 logging.disable(logging.CRITICAL)
 
@@ -91,7 +91,7 @@ class ConfigTest(unittest.TestCase):
             p = os.path.join(d, "c.toml")
             with open(p, "w") as f:
                 f.write('[ui]\ntitle = "Meu Painel"\nlanguage = "en"\n[server]\nport = 9000\n[sites.30]\nname = "Loja"\n')
-            os.environ["LOGSNPM_PORT"] = "9100"
+            os.environ["REQUESTATLAS_PORT"] = "9100"
             cfg = config.load(p)
             self.assertEqual((cfg["ui"]["title"], cfg["ui"]["language"], cfg["server"]["port"]), ("Meu Painel", "en", 9100))
             self.assertEqual(cfg["sites"][30]["name"], "Loja")
@@ -101,7 +101,7 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(config.ConfigError):
                 config.load(p)
         finally:
-            os.environ.pop("LOGSNPM_PORT", None)
+            os.environ.pop("REQUESTATLAS_PORT", None)
             shutil.rmtree(d)
 
 
@@ -111,14 +111,14 @@ class ConfigTest(unittest.TestCase):
             with open(pwd, "w") as f:
                 f.write("secret-from-file\n")
             overrides = {
-                "LOGSNPM__UI__ACCENT": '["#ff8800","#0077bb"]',
-                "LOGSNPM__UI__SHOW_CAVEATS": "false",
-                "LOGSNPM__UI__PAGES": '["overview","bots"]',
-                "LOGSNPM__EVENTS__ITEMS": '[{"ts":"2026-10-05T10:00:00-03:00","title":"Block"}]',
-                "LOGSNPM__SITES__30__NAME": "Minha loja",
-                "LOGSNPM__SITES__30__API_PREFIXES": '["/graphql/"]',
-                "LOGSNPM_AUTH_USER": "admin",
-                "LOGSNPM_AUTH_PASSWORD_FILE": pwd,
+                "REQUESTATLAS__UI__ACCENT": '["#ff8800","#0077bb"]',
+                "REQUESTATLAS__UI__SHOW_CAVEATS": "false",
+                "REQUESTATLAS__UI__PAGES": '["overview","bots"]',
+                "REQUESTATLAS__EVENTS__ITEMS": '[{"ts":"2026-10-05T10:00:00-03:00","title":"Block"}]',
+                "REQUESTATLAS__SITES__30__NAME": "Minha loja",
+                "REQUESTATLAS__SITES__30__API_PREFIXES": '["/graphql/"]',
+                "REQUESTATLAS_AUTH_USER": "admin",
+                "REQUESTATLAS_AUTH_PASSWORD_FILE": pwd,
             }
             with patch.dict(os.environ, overrides):
                 loaded = config.load(os.devnull)
@@ -133,13 +133,13 @@ class ConfigTest(unittest.TestCase):
 
     def test_bad_settings_fail_before_server_starts(self):
         for override in (
-            {"LOGSNPM__UI__ACCENT": '["not a color"]'},
-            {"LOGSNPM__UI__SHOW_CAVEATS": "not-boolean"},
-            {"LOGSNPM__UI__LINKS": '[{"label":"Bad","url":"javascript:alert(1)"}]'},
-            {"LOGSNPM__SERVER__TRUST_X_FORWARDED_FOR": "true"},
-            {"LOGSNPM__SERVER__ALLOW_NETWORKS": '["not-a-cidr"]'},
-            {"LOGSNPM__UI__TYPO": "foo"},
-            {"LOGSNPM__EVENTS__ITEMS": "not-json"},
+            {"REQUESTATLAS__UI__ACCENT": '["not a color"]'},
+            {"REQUESTATLAS__UI__SHOW_CAVEATS": "not-boolean"},
+            {"REQUESTATLAS__UI__LINKS": '[{"label":"Bad","url":"javascript:alert(1)"}]'},
+            {"REQUESTATLAS__SERVER__TRUST_X_FORWARDED_FOR": "true"},
+            {"REQUESTATLAS__SERVER__ALLOW_NETWORKS": '["not-a-cidr"]'},
+            {"REQUESTATLAS__UI__TYPO": "foo"},
+            {"REQUESTATLAS__EVENTS__ITEMS": "not-json"},
         ):
             with self.subTest(override=override), patch.dict(os.environ, override):
                 with self.assertRaises(config.ConfigError):
@@ -204,7 +204,7 @@ class ConfigTest(unittest.TestCase):
                 })
                 with urllib.request.urlopen(request) as response:
                     self.assertEqual(response.status, 200)
-                    self.assertEqual(json.load(response)["title"], "logsNPM")
+                    self.assertEqual(json.load(response)["title"], "RequestAtlas")
             finally:
                 server.shutdown()
                 server.server_close()

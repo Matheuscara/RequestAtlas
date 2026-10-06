@@ -55,7 +55,7 @@ window.I18N = {
   "requisições": "requests",
   "Requisição a página HTML não é anúncio exibido, receita de AdSense, cadastro nem visitante humano.": "A request to an HTML page is not an ad impression, AdSense revenue, a signup or a human visitor.",
   "Bots são reconhecidos apenas pelo User-Agent (que pode ser falsificado). O restante aparece como “não identificado como bot” — inclui navegadores reais e robôs que não se declaram.": "Bots are recognized only by User-Agent (which can be spoofed). Everything else shows as “not identified as bot” — real browsers <i>and</i> robots that don't declare themselves.",
-  "As regras de classificação mudaram desde a última ingestão. Rode <code>logsnpm reindex</code> para reprocessar os logs com as regras novas.": "Classification rules changed since the last ingestion. Run <code>logsnpm reindex</code> to reprocess the logs with the new rules.",
+  "As regras de classificação mudaram desde a última ingestão. Rode <code>requestatlas reindex</code> para reprocessar os logs com as regras novas.": "Classification rules changed since the last ingestion. Run <code>requestatlas reindex</code> to reprocess the logs with the new rules.",
   "novo": "new",
   "vs. período anterior de mesma duração ({n})": "vs. previous period of the same length ({n})",
   "estimativa": "estimate",
@@ -310,7 +310,7 @@ window.I18N = {
   "Aparência": "Appearance",
   "Aparência (prévia local ativa)": "Appearance (local preview active)",
   "Fechar": "Close",
-  "<b>Prévia local, só neste navegador.</b> Os ajustes ficam guardados no localStorage e <b>não alteram a configuração do servidor</b> nem o que outras pessoas veem. Para torná-los permanentes, baixe o trecho TOML e mescle no logsnpm.toml.": "<b>Local preview, this browser only.</b> Changes are kept in localStorage and <b>do not modify the server configuration</b> or what other people see. To make them permanent, download the TOML snippet and merge it into logsnpm.toml.",
+  "<b>Prévia local, só neste navegador.</b> Os ajustes ficam guardados no localStorage e <b>não alteram a configuração do servidor</b> nem o que outras pessoas veem. Para torná-los permanentes, baixe o trecho TOML e mescle no requestatlas.toml.": "<b>Local preview, this browser only.</b> Changes are kept in localStorage and <b>do not modify the server configuration</b> or what other people see. To make them permanent, download the TOML snippet and merge it into requestatlas.toml.",
   "Marca": "Brand",
   "Título": "Title",
   "Subtítulo": "Subtitle",
@@ -327,6 +327,6 @@ window.I18N = {
   "1 ajuste local em prévia.": "1 local change in preview.",
   "{n} ajustes locais em prévia.": "{n} local changes in preview.",
   "aparência exportada da prévia local": "appearance exported from the local preview",
-  "Mescle estas chaves nas tabelas [ui] e [ui.colors] do seu logsnpm.toml (o TOML não aceita a mesma tabela duas vezes) e reinicie o logsNPM.": "Merge these keys into the [ui] and [ui.colors] tables of your logsnpm.toml (TOML does not allow the same table twice) and restart logsNPM."
+  "Mescle estas chaves nas tabelas [ui] e [ui.colors] do seu requestatlas.toml (o TOML não aceita a mesma tabela duas vezes) e reinicie o RequestAtlas.": "Merge these keys into the [ui] and [ui.colors] tables of your requestatlas.toml (TOML does not allow the same table twice) and restart RequestAtlas."
  }
 };

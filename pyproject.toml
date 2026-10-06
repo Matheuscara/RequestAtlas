@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "logsnpm"
+name = "requestatlas"
 dynamic = ["version"]
 description = "Painel de análise dos access logs do Nginx Proxy Manager: bots, status, páginas e origem."
 readme = "README.md"
@@ -15,13 +15,13 @@ dependencies = []
 geoip = ["maxminddb>=2.0"]
 
 [project.scripts]
-logsnpm = "logsnpm.__main__:main"
+requestatlas = "requestatlas.__main__:main"
 
 [tool.setuptools]
-packages = ["logsnpm"]
+packages = ["requestatlas"]
 
 [tool.setuptools.dynamic]
-version = { attr = "logsnpm.__version__" }
+version = { attr = "requestatlas.__version__" }
 
 [tool.setuptools.package-data]
-logsnpm = ["web/*", "web/vendor/*"]
+requestatlas = ["web/*", "web/vendor/*"]

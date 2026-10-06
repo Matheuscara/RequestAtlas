@@ -20,9 +20,9 @@ jobs:
       - name: smoke (demo data)
         run: |
           python scripts/gen_demo.py /tmp/demo --days 8
-          python -m logsnpm ingest --config /tmp/demo/logsnpm.toml
-          python -m logsnpm check --config /tmp/demo/logsnpm.toml
+          python -m requestatlas ingest --config /tmp/demo/requestatlas.toml
+          python -m requestatlas check --config /tmp/demo/requestatlas.toml
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --check logsnpm/web/app.js && node --check logsnpm/web/i18n.js
+      - run: node --check requestatlas/web/app.js && node --check requestatlas/web/i18n.js

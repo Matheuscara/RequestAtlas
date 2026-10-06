@@ -86,7 +86,7 @@ class Ingester:
         if self.meta("rules_fp") is None:
             self.set_meta("rules_fp", fp)
         elif self.meta("rules_fp") != fp:
-            log.warning("regras de classificação mudaram desde a ingestão; rode `logsnpm reindex` para reprocessar")
+            log.warning("regras de classificação mudaram desde a ingestão; rode `requestatlas reindex` para reprocessar")
 
     def meta(self, k):
         row = self.conn.execute("SELECT v FROM meta WHERE k=?", (k,)).fetchone()

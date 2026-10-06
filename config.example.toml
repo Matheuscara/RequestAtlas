@@ -1,24 +1,24 @@
-# logsNPM — configuração de exemplo. Copie para logsnpm.toml e ajuste.
+# RequestAtlas — configuração de exemplo. Copie para requestatlas.toml e ajuste.
 # Tudo é opcional: o que não estiver aqui usa o padrão mostrado (comentado). Opção desconhecida ou de
-# tipo errado impede a inicialização — `logsnpm check` mostra o erro.
+# tipo errado impede a inicialização — `requestatlas check` mostra o erro.
 #
-# Onde fica: --config ou $LOGSNPM_CONFIG (precisa existir); senão ./logsnpm.toml ou /etc/logsnpm/logsnpm.toml.
-# No Docker: coloque em $LOGSNPM_CONFIG_DIR/logsnpm.toml (montado em /etc/logsnpm, detectado sozinho).
+# Onde fica: --config ou $REQUESTATLAS_CONFIG (precisa existir); senão ./requestatlas.toml ou /etc/requestatlas/requestatlas.toml.
+# No Docker: coloque em $REQUESTATLAS_CONFIG_DIR/requestatlas.toml (montado em /etc/requestatlas, detectado sozinho).
 #
-# Precedência: padrões < este arquivo < LOGSNPM_* (atalhos) < LOGSNPM__SEÇÃO__CHAVE.
-# Qualquer chave abaixo vira variável: [ui] title → LOGSNPM__UI__TITLE, [sites.30] name →
-# LOGSNPM__SITES__30__NAME, [[events]] → LOGSNPM__EVENTS__ITEMS (lista JSON). O valor é JSON
+# Precedência: padrões < este arquivo < REQUESTATLAS_* (atalhos) < REQUESTATLAS__SEÇÃO__CHAVE.
+# Qualquer chave abaixo vira variável: [ui] title → REQUESTATLAS__UI__TITLE, [sites.30] name →
+# REQUESTATLAS__SITES__30__NAME, [[events]] → REQUESTATLAS__EVENTS__ITEMS (lista JSON). O valor é JSON
 # (30, true, ["a", "b"], {"html": "#f97316"}); se não for JSON válido, vira texto. Tabelas e listas
 # passadas por variável substituem as do arquivo inteiras.
 #
-# Mudanças em [classify], [bots], [privacy], ingest.exclude_hosts e sites.*.api_*/ua_rules exigem `logsnpm reindex`.
+# Mudanças em [classify], [bots], [privacy], ingest.exclude_hosts e sites.*.api_*/ua_rules exigem `requestatlas reindex`.
 
 [paths]
-# No Docker estes caminhos são definidos pela imagem (/npm, /var/lib/logsnpm, /geoip) e ignoram o arquivo.
+# No Docker estes caminhos são definidos pela imagem (/npm, /var/lib/requestatlas, /geoip) e ignoram o arquivo.
 # log_dir = "/data/logs"                    # diretório de logs do NPM (proxy-host-N_access.log + .gz)
 # npm_db = "/data/database.sqlite"          # banco do NPM, aberto SOMENTE LEITURA (nomes de domínio, regras)
 # nginx_custom_dir = "/data/nginx/custom"   # para detectar `geo $blocked_ip { ... }` (opcional)
-# data_dir = "/var/lib/logsnpm"             # onde o logsNPM guarda o próprio banco de agregados
+# data_dir = "/var/lib/requestatlas"        # onde ficam requestatlas.db (agregados) e ip-hmac.key
 # geoip_city = ""                           # GeoLite2-City.mmdb (opcional; país no mapa)
 # geoip_asn = ""                            # GeoLite2-ASN.mmdb (opcional; operadora/nuvem)
 
@@ -37,15 +37,15 @@
 # port = 7881
 # allow_networks = ["192.168.0.0/16", "100.64.0.0/10", "127.0.0.1/32"]   # vazio = qualquer IP
 # auth_user = ""                            # basic auth (defina os dois ou nenhum)
-# auth_password = ""                        # ou LOGSNPM_AUTH_PASSWORD_FILE=/caminho (não combine os dois)
+# auth_password = ""                        # ou REQUESTATLAS_AUTH_PASSWORD_FILE=/caminho (não combine os dois)
 # trust_x_forwarded_for = false             # true só atrás de proxy reverso, e exige a lista abaixo
 # trusted_proxy_networks = ["172.18.0.0/16"]   # IPs do proxy cujo X-Forwarded-For é aceito (ex.: rede Docker do NPM)
 # cache_ttl = 30
 
 [ui]
 # Dica: o botão “Aparência” do painel faz uma prévia local de título, subtítulo e cores e
-# baixa um logsnpm-ui.toml com [ui]/[ui.colors] para mesclar aqui.
-# title = "logsNPM"
+# baixa um requestatlas-ui.toml com [ui]/[ui.colors] para mesclar aqui.
+# title = "RequestAtlas"
 # subtitle = "análise de tráfego do NPM"
 # language = "pt-BR"                        # pt-BR | en
 # logo_url = ""                             # URL http(s) ou caminho /… de uma imagem quadrada; vazio = ícone padrão

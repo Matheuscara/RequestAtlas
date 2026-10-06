@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RequestAtlas — self-hosted traffic dashboard for Nginx Proxy Manager</title>
+  <meta name="description" content="RequestAtlas reads Nginx Proxy Manager access logs and shows pages vs. static files vs. API calls, bots by User-Agent, and intentional 403 blocks apart from real 5xx failures. Self-hosted, open source, MIT.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#060a13">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RequestAtlas — see what's really hitting your reverse proxy">
+  <meta property="og:description" content="Self-hosted, open-source dashboard for Nginx Proxy Manager access logs.">
+  <meta property="og:url" content="https://matheuscara.github.io/RequestAtlas/">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script>document.documentElement.classList.add("js")</script>
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+
+  <header class="top">
+    <nav class="nav wrap" aria-label="Main">
+      <a class="brand" href="#top" aria-label="RequestAtlas, back to top">
+        <img src="assets/favicon.svg" alt="" width="28" height="28">
+        <span>RequestAtlas</span>
+      </a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="menu">
+        <span class="sr" data-i18n="menu">Menu</span>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="menu" id="menu">
+        <ul>
+          <li><a href="#features" data-i18n="nav.features">Features</a></li>
+          <li><a href="#quickstart" data-i18n="nav.quickstart">Quickstart</a></li>
+          <li><a href="#customize" data-i18n="nav.customize">Customize</a></li>
+          <li><a href="#privacy" data-i18n="nav.privacy">Privacy</a></li>
+          <li><a href="#faq">FAQ</a></li>
+        </ul>
+        <div class="menu-actions">
+          <button class="lang" type="button" data-lang-toggle aria-label="PT, ler em português" lang="pt">PT</button>
+          <a class="btn btn-ghost btn-sm" href="https://github.com/Matheuscara/RequestAtlas">
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            GitHub
+          </a>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" id="top" aria-labelledby="hero-title">
+      <div class="hero-copy reveal">
+        <p class="eyebrow" data-i18n="hero.eyebrow">Self-hosted · open source · for Nginx Proxy Manager</p>
+        <h1 id="hero-title" data-i18n="hero.title">See what's <em>really</em> hitting your reverse proxy.</h1>
+        <p class="lead" data-i18n="hero.lead">RequestAtlas reads your Nginx Proxy Manager access logs and turns them into a private dashboard: pages vs. static files vs. API calls, bots identified by User-Agent, and the 403s you meant to send kept apart from real 5xx failures.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#quickstart" data-i18n="hero.cta">Install in 3 steps</a>
+          <a class="btn btn-ghost" href="https://github.com/Matheuscara/RequestAtlas" data-i18n="hero.github">View source on GitHub</a>
+        </div>
+        <ul class="facts" aria-label="Project facts">
+          <li data-i18n="hero.f1">MIT license</li>
+          <li data-i18n="hero.f2">Docker image for amd64 &amp; arm64</li>
+          <li data-i18n="hero.f3">No changes to your proxy hosts</li>
+        </ul>
+      </div>
+      <figure class="hero-shot reveal">
+        <img src="assets/dashboard.svg" width="1200" height="760"
+             alt="RequestAtlas overview: request totals split into HTML, static and API; bots by User-Agent; 403 by rule shown apart from 5xx; a stacked hourly chart with a 'Blocked GPTBot' event marker; top domains on example.com. All numbers are fictional."
+             data-i18n-alt="hero.alt">
+        <figcaption data-i18n="hero.caption">Illustration with fictional sample data.</figcaption>
+      </figure>
+    </section>
+
+    <section class="section wrap" id="features" aria-labelledby="features-title">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="features.eyebrow">What it shows</p>
+        <h2 id="features-title" data-i18n="features.title">Every request, sorted into something you can act on</h2>
+        <p data-i18n="features.lead">Raw access logs already know who asked for what. RequestAtlas reads them incrementally — including rotated <code>.gz</code> files — and answers the questions you'd otherwise grep for.</p>
+      </div>
+      <ul class="grid features">
+        <li class="card reveal" style="--c: var(--static)">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4zM4 11h10v4H4zM4 17h6v3H4z"/></svg></span>
+          <h3 data-i18n="f1.t">Pages, assets and API — split</h3>
+          <p data-i18n="f1.d">Each request is classified as HTML, static file or API call, so a burst of JavaScript downloads never looks like a traffic spike. Prefixes and extensions are configurable per site.</p>
+        </li>
+        <li class="card reveal" style="--c: var(--bot)">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg></span>
+          <h3 data-i18n="f2.t">Bots by User-Agent</h3>
+          <p data-i18n="f2.d">Built-in signatures for search engines, AI crawlers and SEO tools, plus your own patterns. See the top declared bots and their hourly or daily trend.</p>
+        </li>
+        <li class="card reveal" style="--c: var(--rule)">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+          <h3 data-i18n="f3.t">Expected 403 ≠ real failure</h3>
+          <p data-i18n="f3.d">Blocks you configured in NPM — User-Agent rules or <code>geo</code> IP lists — count as intentional 403s, apart from 429 rate limits and upstream 5xx errors.</p>
+        </li>
+        <li class="card reveal" style="--c: var(--html)">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.5 2.5 13.5 0 16M12 4c-2.5 2.5-2.5 13.5 0 16"/></svg></span>
+          <h3 data-i18n="f4.t">Per-domain pages</h3>
+          <p data-i18n="f4.d">Traffic for each proxy host and its top paths, filtered by period, status, bot and request type — with CSV export.</p>
+        </li>
+        <li class="card reveal" style="--c: var(--ok)">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></span>
+          <h3 data-i18n="f5.t">Origin, with privacy</h3>
+          <p data-i18n="f5.d">Country and ASN from your own optional GeoLite2 files. Full IPs are never displayed — only /24 or /48 networks — and distinct-IP counts are clearly labeled as estimates.</p>
+        </li>
+        <li class="card reveal" style="--c: var(--api)">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 4-6"/><path d="M14 4v16" stroke-dasharray="2 2"/></svg></span>
+          <h3 data-i18n="f6.t">Events and before/after</h3>
+          <p data-i18n="f6.d">Mark a change such as “Blocked GPTBot” and compare periods around it. An ingestion page tells you whether the numbers are current.</p>
+        </li>
+      </ul>
+
+      <aside class="honest reveal" aria-labelledby="honest-title">
+        <h3 id="honest-title" data-i18n="honest.t">Numbers that don't oversell</h3>
+        <p data-i18n="honest.d">An HTML request is not a visitor, an ad impression or a sale. “Not identified as a bot” does not mean human. Distinct IPs are not people. RequestAtlas says so in the dashboard instead of hiding it.</p>
+      </aside>
+    </section>
+
+    <section class="section wrap" id="quickstart" aria-labelledby="qs-title">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="qs.eyebrow">Quickstart</p>
+        <h2 id="qs-title" data-i18n="qs.title">Running in three steps</h2>
+        <p data-i18n="qs.lead">You need Docker Compose v2.24+ and the host directory that Nginx Proxy Manager mounts at <code>/data</code>.</p>
+      </div>
+      <ol class="steps">
+        <li class="step reveal">
+          <h3><span class="num" aria-hidden="true">1</span><span data-i18n="qs.s1">Get the files</span></h3>
+          <p data-i18n="qs.s1d">Clone the repository and create the <code>.env</code> and <code>config/</code> you'll edit.</p>
+          <div class="code">
+            <pre><code>git clone https://github.com/Matheuscara/RequestAtlas.git
+cd RequestAtlas
+cp .env.example .env
+mkdir -p config</code></pre>
+            <button class="copy" type="button" data-i18n="copy">Copy</button>
+          </div>
+        </li>
+        <li class="step reveal">
+          <h3><span class="num" aria-hidden="true">2</span><span data-i18n="qs.s2">Point it at NPM</span></h3>
+          <p data-i18n="qs.s2d">In <code>.env</code>, set the <em>absolute</em> path of NPM's data directory:</p>
+          <div class="code">
+            <pre><code>REQUESTATLAS_NPM_DATA=/srv/nginx-proxy-manager/data</code></pre>
+            <button class="copy" type="button" data-i18n="copy">Copy</button>
+          </div>
+        </li>
+        <li class="step reveal">
+          <h3><span class="num" aria-hidden="true">3</span><span data-i18n="qs.s3">Start it</span></h3>
+          <div class="code">
+            <pre><code>docker compose up -d</code></pre>
+            <button class="copy" type="button" data-i18n="copy">Copy</button>
+          </div>
+          <p data-i18n="qs.s3d">Open <code>http://127.0.0.1:7881</code> on the Docker host. It listens on loopback only; reach it through an SSH tunnel or publish it via NPM with HTTPS and an Access List.</p>
+        </li>
+      </ol>
+      <div class="split reveal">
+        <div class="demo">
+          <h3 data-i18n="demo.t">No NPM handy? Try the demo</h3>
+          <p data-i18n="demo.d">With Python 3.11+, generate fictional logs, domains and a bot-block event, then open the same address.</p>
+          <div class="code">
+            <pre><code>python3 scripts/gen_demo.py /tmp/requestatlas-demo
+REQUESTATLAS_LANGUAGE=en python3 -m requestatlas serve \
+  --config /tmp/requestatlas-demo/requestatlas.toml</code></pre>
+            <button class="copy" type="button" data-i18n="copy">Copy</button>
+          </div>
+        </div>
+        <div class="more">
+          <h3 data-i18n="more.t">Full guide</h3>
+          <p data-i18n="more.d">Permissions, authentication, MySQL/MariaDB setups, native install with systemd, and reprocessing after rule changes are all in the README.</p>
+          <p class="links">
+            <a href="https://github.com/Matheuscara/RequestAtlas/blob/master/README.en.md">README (English) →</a>
+            <a href="https://github.com/Matheuscara/RequestAtlas#readme" lang="pt">README (Português) →</a>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap" id="customize" aria-labelledby="cz-title">
+      <div class="two">
+        <div class="reveal">
+          <p class="eyebrow" data-i18n="cz.eyebrow">Customize</p>
+          <h2 id="cz-title" data-i18n="cz.title">Your dashboard, your rules</h2>
+          <ul class="checks">
+            <li data-i18n="cz.l1"><strong>Preview in the browser.</strong> The Appearance panel tries titles and colors locally, then downloads a TOML snippet. The dashboard never writes server config.</li>
+            <li data-i18n="cz.l2"><strong>Configure in one TOML file.</strong> Branding, English or Portuguese UI, time zone, page order, colors, custom bots, URL classification, domains, events and privacy.</li>
+            <li data-i18n="cz.l3"><strong>Override from the environment.</strong> Any key works as <code>REQUESTATLAS__SECTION__KEY</code>, so Compose users can stay in <code>.env</code>.</li>
+            <li data-i18n="cz.l4"><strong>Logs-only mode.</strong> NPM on MySQL or MariaDB? Log analysis still works — name your domains and block rules in TOML.</li>
+          </ul>
+        </div>
+        <div class="code code-file reveal">
+          <div class="file-name">config/requestatlas.toml</div>
+          <pre><code><span class="t-s">[ui]</span>
+<span class="t-k">title</span> = <span class="t-v">"My dashboard"</span>
+<span class="t-k">language</span> = <span class="t-v">"en"</span>
+<span class="t-k">default_tz</span> = <span class="t-v">"Europe/Berlin"</span>
+<span class="t-k">accent</span> = [<span class="t-v">"#f97316"</span>, <span class="t-v">"#ec4899"</span>]
+<span class="t-k">pages</span> = [<span class="t-v">"overview"</span>, <span class="t-v">"sites"</span>, <span class="t-v">"bots"</span>, <span class="t-v">"status"</span>]
+
+<span class="t-s">[sites.1]</span>
+<span class="t-k">name</span> = <span class="t-v">"My shop"</span>
+<span class="t-k">api_prefixes</span> = [<span class="t-v">"/api/"</span>]
+<span class="t-k">ua_rules</span> = [{ <span class="t-k">pattern</span> = <span class="t-v">"GPTBot"</span>, <span class="t-k">status</span> = <span class="t-n">403</span> }]</code></pre>
+          <button class="copy" type="button" data-i18n="copy">Copy</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap" id="privacy" aria-labelledby="pv-title">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="pv.eyebrow">Privacy &amp; security</p>
+        <h2 id="pv-title" data-i18n="pv.title">Built to stay on your server</h2>
+      </div>
+      <ul class="grid privacy">
+        <li class="card reveal">
+          <h3 data-i18n="pv1.t">Read-only access to NPM</h3>
+          <p data-i18n="pv1.d">Only logs, <code>database.sqlite</code> and nginx config are mounted, read-only. NPM's <code>keys.json</code>, custom certificates and access lists stay out. Aggregates live in RequestAtlas's own volume.</p>
+        </li>
+        <li class="card reveal">
+          <h3 data-i18n="pv2.t">Private by default</h3>
+          <p data-i18n="pv2.d">Published on <code>127.0.0.1</code> only, running as a non-root user. Optional Basic Auth from a password file; <code>/healthz</code> is the only open endpoint.</p>
+        </li>
+        <li class="card reveal">
+          <h3 data-i18n="pv3.t">No raw IPs in its database</h3>
+          <p data-i18n="pv3.d">Addresses are stored as a keyed hash, with a secret generated on your server, next to the masked network. The UI shows networks, never full IPs.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section wrap narrow" id="faq" aria-labelledby="faq-title">
+      <h2 id="faq-title" class="reveal" data-i18n="faq.title">Questions</h2>
+      <div class="faq reveal">
+        <details>
+          <summary data-i18n="q1">Does it work with plain Nginx, Caddy or Traefik?</summary>
+          <p data-i18n="a1">Not today. The parser reads Nginx Proxy Manager's proxy-host log format (<code>proxy-host-N_access.log</code> and its rotated <code>.gz</code> files).</p>
+        </details>
+        <details>
+          <summary data-i18n="q2">Does it change my NPM setup?</summary>
+          <p data-i18n="a2">No. It only reads logs and NPM's database. Proxy hosts, certificates and Advanced config stay untouched.</p>
+        </details>
+        <details>
+          <summary data-i18n="q3">Is it a web analytics tool?</summary>
+          <p data-i18n="a3">It counts requests that reached your proxy, not people. There is no tracking script and nothing to add to your sites.</p>
+        </details>
+        <details>
+          <summary data-i18n="q4">Can I run it without Docker?</summary>
+          <p data-i18n="a4">Yes. It needs Python 3.11+ on a host that can read the NPM logs; a systemd unit is included in <code>deploy/</code>.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="cta wrap reveal" aria-labelledby="cta-title">
+      <h2 id="cta-title" data-i18n="cta.title">Open source, MIT licensed</h2>
+      <p data-i18n="cta.d">Read the code, open an issue, or adapt it to your own proxy. Contributions are welcome.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/Matheuscara/RequestAtlas" data-i18n="cta.gh">Get RequestAtlas on GitHub</a>
+        <a class="btn btn-ghost" href="https://github.com/Matheuscara/RequestAtlas/blob/master/scripts/gen_demo.py" data-i18n="cta.demo">See the demo data generator</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <p data-i18n="foot.d">RequestAtlas is an independent project, not affiliated with Nginx Proxy Manager. Dashboard images use fictional sample data.</p>
+    <p><a href="https://github.com/Matheuscara/RequestAtlas/blob/master/LICENSE" data-i18n="foot.lic">MIT License</a> · <a href="https://github.com/Matheuscara/RequestAtlas/issues" data-i18n="foot.issues">Issues</a></p>
+  </footer>
+</body>
+</html>

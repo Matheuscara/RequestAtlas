@@ -1,11 +1,11 @@
-"""logsNPM — painel de análise dos access logs do Nginx Proxy Manager.
+"""RequestAtlas — painel de análise dos access logs do Nginx Proxy Manager.
 
 Uso:
-  python -m logsnpm serve          coleta incremental (a cada ingest.interval s) + painel/API HTTP
-  python -m logsnpm ingest         um ciclo de ingestão e sai
-  python -m logsnpm reindex        apaga os agregados e reprocessa todos os logs (após mudar regras)
-  python -m logsnpm check          valida a configuração e mostra o que foi encontrado
-Opções: --config CAMINHO (ou $LOGSNPM_CONFIG)
+  python -m requestatlas serve          coleta incremental (a cada ingest.interval s) + painel/API HTTP
+  python -m requestatlas ingest         um ciclo de ingestão e sai
+  python -m requestatlas reindex        apaga os agregados e reprocessa todos os logs (após mudar regras)
+  python -m requestatlas check          valida a configuração e mostra o que foi encontrado
+Opções: --config CAMINHO (ou $REQUESTATLAS_CONFIG)
 """
 import argparse
 import json
@@ -63,9 +63,9 @@ def cmd_check(cfg):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="logsnpm", description="Painel de análise dos logs do Nginx Proxy Manager")
+    ap = argparse.ArgumentParser(prog="requestatlas", description="Painel de análise dos logs do Nginx Proxy Manager")
     ap.add_argument("command", nargs="?", default="serve", choices=["serve", "ingest", "reindex", "check", "version"])
-    ap.add_argument("--config", help="arquivo TOML (padrão: $LOGSNPM_CONFIG, ./logsnpm.toml, /etc/logsnpm/logsnpm.toml)")
+    ap.add_argument("--config", help="arquivo TOML (padrão: $REQUESTATLAS_CONFIG, ./requestatlas.toml, /etc/requestatlas/requestatlas.toml)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
@@ -97,7 +97,7 @@ def main(argv=None):
     application = api.Api(cfg)
     application.ingest_thread = worker
     srv = api.make_server(application, cfg)
-    logging.info("logsNPM %s em http://%s:%s (config: %s)", __version__, cfg["server"]["listen"],
+    logging.info("RequestAtlas %s em http://%s:%s (config: %s)", __version__, cfg["server"]["listen"],
                  cfg["server"]["port"], cfg.get("_path") or "defaults")
     try:
         srv.serve_forever()

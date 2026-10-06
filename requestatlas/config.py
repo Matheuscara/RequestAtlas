@@ -1,8 +1,8 @@
-"""Configuração do logsNPM.
+"""Configuração do RequestAtlas.
 
-Precedência: padrões < TOML < LOGSNPM_* legadas < LOGSNPM__SEÇÃO__CHAVE.
+Precedência: padrões < TOML < REQUESTATLAS_* legadas < REQUESTATLAS__SEÇÃO__CHAVE.
 Nas variáveis duplas, números, booleanos, arrays e objetos são JSON; texto sem
-aspas permanece texto. Mudanças de classificação exigem ``logsnpm reindex``.
+aspas permanece texto. Mudanças de classificação exigem ``requestatlas reindex``.
 """
 import copy
 import datetime as dt
@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 DEFAULTS = {
     "paths": {
         "log_dir": "/data/logs", "npm_db": "/data/database.sqlite",
-        "nginx_custom_dir": "/data/nginx/custom", "data_dir": "/var/lib/logsnpm",
+        "nginx_custom_dir": "/data/nginx/custom", "data_dir": "/var/lib/requestatlas",
         "geoip_city": "", "geoip_asn": "",
     },
     "ingest": {
@@ -33,7 +33,7 @@ DEFAULTS = {
         "trust_x_forwarded_for": False,
     },
     "ui": {
-        "title": "logsNPM", "subtitle": "", "language": "pt-BR", "logo_url": "",
+        "title": "RequestAtlas", "subtitle": "", "language": "pt-BR", "logo_url": "",
         "accent": ["#818cf8", "#22d3ee"], "default_period": "7d",
         "default_tz": "UTC", "timezones": [],
         "pages": ["overview", "sites", "bots", "status", "pages", "geo", "health"],
@@ -49,21 +49,21 @@ DEFAULTS = {
 }
 
 ENV = {
-    "LOGSNPM_LOG_DIR": ("paths", "log_dir", str),
-    "LOGSNPM_NPM_DB": ("paths", "npm_db", str),
-    "LOGSNPM_NGINX_CUSTOM_DIR": ("paths", "nginx_custom_dir", str),
-    "LOGSNPM_DATA_DIR": ("paths", "data_dir", str),
-    "LOGSNPM_GEOIP_CITY": ("paths", "geoip_city", str),
-    "LOGSNPM_GEOIP_ASN": ("paths", "geoip_asn", str),
-    "LOGSNPM_LISTEN": ("server", "listen", str),
-    "LOGSNPM_PORT": ("server", "port", int),
-    "LOGSNPM_AUTH_USER": ("server", "auth_user", str),
-    "LOGSNPM_AUTH_PASSWORD": ("server", "auth_password", str),
-    "LOGSNPM_LANGUAGE": ("ui", "language", str),
-    "LOGSNPM_TITLE": ("ui", "title", str),
-    "LOGSNPM_DEFAULT_TZ": ("ui", "default_tz", str),
+    "REQUESTATLAS_LOG_DIR": ("paths", "log_dir", str),
+    "REQUESTATLAS_NPM_DB": ("paths", "npm_db", str),
+    "REQUESTATLAS_NGINX_CUSTOM_DIR": ("paths", "nginx_custom_dir", str),
+    "REQUESTATLAS_DATA_DIR": ("paths", "data_dir", str),
+    "REQUESTATLAS_GEOIP_CITY": ("paths", "geoip_city", str),
+    "REQUESTATLAS_GEOIP_ASN": ("paths", "geoip_asn", str),
+    "REQUESTATLAS_LISTEN": ("server", "listen", str),
+    "REQUESTATLAS_PORT": ("server", "port", int),
+    "REQUESTATLAS_AUTH_USER": ("server", "auth_user", str),
+    "REQUESTATLAS_AUTH_PASSWORD": ("server", "auth_password", str),
+    "REQUESTATLAS_LANGUAGE": ("ui", "language", str),
+    "REQUESTATLAS_TITLE": ("ui", "title", str),
+    "REQUESTATLAS_DEFAULT_TZ": ("ui", "default_tz", str),
 }
-CANDIDATES = ("logsnpm.toml", "/etc/logsnpm/logsnpm.toml")
+CANDIDATES = ("requestatlas.toml", "/etc/requestatlas/requestatlas.toml")
 COLOR_KEYS = {"html", "static", "api", "other", "bot", "nonbot", "noua",
               "s1", "s2", "s3", "s4", "s5", "rule", "s429", "palette"}
 SITE_KEYS = {"name", "hidden", "domains", "api_prefixes", "api_hosts", "ua_rules"}
@@ -91,7 +91,7 @@ def _merge(base, over, path=""):
 
 
 def find_config_path():
-    path = os.environ.get("LOGSNPM_CONFIG")
+    path = os.environ.get("REQUESTATLAS_CONFIG")
     if path:
         return path
     return next((p for p in CANDIDATES if os.path.exists(p)), None)
@@ -124,11 +124,11 @@ def load(path=None):
             except ValueError as exc:
                 raise ConfigError(f"{var}: valor inválido") from exc
     for var, text in sorted(os.environ.items()):
-        if not var.startswith("LOGSNPM__"):
+        if not var.startswith("REQUESTATLAS__"):
             continue
-        parts = [part.lower() for part in var.removeprefix("LOGSNPM__").split("__")]
+        parts = [part.lower() for part in var.removeprefix("REQUESTATLAS__").split("__")]
         if len(parts) not in (2, 3) or parts[0] not in DEFAULTS:
-            raise ConfigError(f"{var}: use LOGSNPM__SEÇÃO__CHAVE (ou __SITES__ID__CHAVE)")
+            raise ConfigError(f"{var}: use REQUESTATLAS__SEÇÃO__CHAVE (ou __SITES__ID__CHAVE)")
         section, key = parts[0], parts[-1]
         if section == "sites" and len(parts) == 3:
             if not parts[1].isdigit() or key not in SITE_KEYS:
@@ -140,15 +140,15 @@ def load(path=None):
             cfg[section][key] = _env_value(text)
         else:
             raise ConfigError(f"{var}: opção desconhecida")
-    password_file = os.environ.get("LOGSNPM_AUTH_PASSWORD_FILE")
+    password_file = os.environ.get("REQUESTATLAS_AUTH_PASSWORD_FILE")
     if password_file:
         if cfg["server"]["auth_password"]:
-            raise ConfigError("LOGSNPM_AUTH_PASSWORD_FILE não pode ser combinado com auth_password")
+            raise ConfigError("REQUESTATLAS_AUTH_PASSWORD_FILE não pode ser combinado com auth_password")
         try:
             with open(password_file) as file:
                 cfg["server"]["auth_password"] = file.read().rstrip("\r\n")
         except OSError as exc:
-            raise ConfigError(f"não foi possível ler LOGSNPM_AUTH_PASSWORD_FILE: {exc}") from exc
+            raise ConfigError(f"não foi possível ler REQUESTATLAS_AUTH_PASSWORD_FILE: {exc}") from exc
     cfg["_path"] = path
     validate(cfg)
     return cfg
@@ -332,7 +332,7 @@ def validate(cfg):
 
 
 def db_path(cfg):
-    return os.path.join(cfg["paths"]["data_dir"], "logsnpm.db")
+    return os.path.join(cfg["paths"]["data_dir"], "requestatlas.db")
 
 
 def rules_fingerprint(cfg):

@@ -681,7 +681,7 @@ def make_server(api, cfg):
     web_root = os.path.realpath(WEB_DIR)
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "logsNPM"
+        server_version = "RequestAtlas"
         protocol_version = "HTTP/1.1"
 
         def client_ip(self):
@@ -751,7 +751,7 @@ def make_server(api, cfg):
             if not self.allowed():
                 return self.send(403, b"forbidden", "text/plain")
             if expected and not hmac.compare_digest(self.headers.get("Authorization", ""), expected):
-                return self.send(401, b"auth required", "text/plain", (("WWW-Authenticate", 'Basic realm="logsNPM"'),))
+                return self.send(401, b"auth required", "text/plain", (("WWW-Authenticate", 'Basic realm="RequestAtlas"'),))
             if u.path.startswith("/api/"):
                 t0 = time.time()
                 try:

@@ -5,7 +5,7 @@ import shutil
 import sqlite3
 import tempfile
 
-from logsnpm import config
+from requestatlas import config
 
 
 def proxy_line(i, ua="Mozilla/5.0 Chrome/129", status=200, path=None, host="example.com", ip=None,
@@ -27,7 +27,7 @@ class Env:
     """Diretório temporário com logs, banco fake do NPM e config."""
 
     def __init__(self, **over):
-        self.root = tempfile.mkdtemp(prefix="logsnpm-test-")
+        self.root = tempfile.mkdtemp(prefix="requestatlas-test-")
         self.logs = os.path.join(self.root, "logs")
         self.custom = os.path.join(self.root, "custom")
         os.makedirs(self.logs)
