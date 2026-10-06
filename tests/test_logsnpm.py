@@ -1,4 +1,6 @@
 """Testes do logsNPM (stdlib unittest): `python -m unittest discover -s tests`."""
+import base64
+import json
 import gzip
 import os
 import shutil
@@ -8,12 +10,16 @@ import tempfile
 import time
 import logging
 import unittest
+import threading
+import urllib.error
+import urllib.request
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from helpers import Env, proxy_line, standard_line  # noqa: E402
-from logsnpm import api, classify, config, ingest  # noqa: E402
+from logsnpm import api, classify, config, ingest, store  # noqa: E402
 
 logging.disable(logging.CRITICAL)
 
@@ -99,17 +105,153 @@ class ConfigTest(unittest.TestCase):
             shutil.rmtree(d)
 
 
+    def test_typed_environment_site_override_and_secret_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            pwd = os.path.join(d, "password")
+            with open(pwd, "w") as f:
+                f.write("secret-from-file\n")
+            overrides = {
+                "LOGSNPM__UI__ACCENT": '["#ff8800","#0077bb"]',
+                "LOGSNPM__UI__SHOW_CAVEATS": "false",
+                "LOGSNPM__UI__PAGES": '["overview","bots"]',
+                "LOGSNPM__EVENTS__ITEMS": '[{"ts":"2026-10-05T10:00:00-03:00","title":"Block"}]',
+                "LOGSNPM__SITES__30__NAME": "Minha loja",
+                "LOGSNPM__SITES__30__API_PREFIXES": '["/graphql/"]',
+                "LOGSNPM_AUTH_USER": "admin",
+                "LOGSNPM_AUTH_PASSWORD_FILE": pwd,
+            }
+            with patch.dict(os.environ, overrides):
+                loaded = config.load(os.devnull)
+            self.assertEqual(loaded["ui"]["pages"], ["overview", "bots"])
+            self.assertEqual(loaded["ui"]["accent"], ["#ff8800", "#0077bb"])
+            self.assertIs(loaded["ui"]["show_caveats"], False)
+            self.assertEqual(loaded["sites"][30]["api_prefixes"], ["/graphql/"])
+            self.assertEqual(loaded["sites"][30]["name"], "Minha loja")
+            self.assertEqual(loaded["server"]["auth_password"], "secret-from-file")
+            self.assertEqual(loaded["events"][0]["title"], "Block")
+            self.assertNotIn("secret-from-file", str(api.Api(loaded).ui_config()))
+
+    def test_bad_settings_fail_before_server_starts(self):
+        for override in (
+            {"LOGSNPM__UI__ACCENT": '["not a color"]'},
+            {"LOGSNPM__UI__SHOW_CAVEATS": "not-boolean"},
+            {"LOGSNPM__UI__LINKS": '[{"label":"Bad","url":"javascript:alert(1)"}]'},
+            {"LOGSNPM__SERVER__TRUST_X_FORWARDED_FOR": "true"},
+            {"LOGSNPM__SERVER__ALLOW_NETWORKS": '["not-a-cidr"]'},
+            {"LOGSNPM__UI__TYPO": "foo"},
+            {"LOGSNPM__EVENTS__ITEMS": "not-json"},
+        ):
+            with self.subTest(override=override), patch.dict(os.environ, override):
+                with self.assertRaises(config.ConfigError):
+                    config.load(os.devnull)
+
+    def test_probe_bypasses_auth_but_detects_stale_collector(self):
+        env = Env(server={"auth_user": "admin", "auth_password": "secret",
+                          "allow_networks": ["203.0.113.0/24"], "listen": "127.0.0.1"})
+        env.cfg["server"]["port"] = 0  # bind ephemeral port only after validating production settings
+        try:
+            store.connect(config.db_path(env.cfg)).close()
+            service = api.Api(env.cfg)
+            server = api.make_server(service, env.cfg)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            address = f"http://127.0.0.1:{server.server_address[1]}"
+            try:
+                with urllib.request.urlopen(address + "/healthz") as res:
+                    self.assertEqual((res.status, res.read()), (200, b"ok\n"))
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(address + "/api/config")
+                self.assertEqual(denied.exception.code, 403)
+                denied.exception.close()
+                # A first backfill may exceed the grace window without yet completing a cycle.
+                service.started_at -= 601
+                service.ingest_thread = thread
+                with urllib.request.urlopen(address + "/healthz") as res:
+                    self.assertEqual((res.status, res.read()), (200, b"ok\n"))
+                service.ingest_thread = None
+                with self.assertRaises(urllib.error.HTTPError) as stale:
+                    urllib.request.urlopen(address + "/healthz")
+                self.assertEqual((stale.exception.code, stale.exception.read()), (503, b"stale\n"))
+                stale.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+        finally:
+            env.close()
+
+    def test_basic_auth_and_untrusted_forwarded_for(self):
+        env = Env(server={"auth_user": "admin", "auth_password": "secret",
+                          "allow_networks": ["127.0.0.1/32"], "listen": "127.0.0.1",
+                          "trust_x_forwarded_for": True,
+                          "trusted_proxy_networks": ["10.0.0.0/8"]})
+        env.cfg["server"]["port"] = 0
+        try:
+            store.connect(config.db_path(env.cfg)).close()
+            server = api.make_server(api.Api(env.cfg), env.cfg)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            url = f"http://127.0.0.1:{server.server_address[1]}/api/config"
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(url)
+                self.assertEqual(denied.exception.code, 401)
+                denied.exception.close()
+                credential = base64.b64encode(b"admin:secret").decode()
+                request = urllib.request.Request(url, headers={
+                    "Authorization": f"Basic {credential}",
+                    "X-Forwarded-For": "203.0.113.77",
+                })
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(json.load(response)["title"], "logsNPM")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+        finally:
+            env.close()
+
+    def test_trusted_proxy_uses_nearest_untrusted_xff(self):
+        env = Env(server={"listen": "127.0.0.1", "allow_networks": ["203.0.113.0/24"],
+                          "trust_x_forwarded_for": True,
+                          "trusted_proxy_networks": ["127.0.0.1/32"]})
+        env.cfg["server"]["port"] = 0
+        try:
+            store.connect(config.db_path(env.cfg)).close()
+            server = api.make_server(api.Api(env.cfg), env.cfg)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            url = f"http://127.0.0.1:{server.server_address[1]}/api/config"
+            try:
+                forged = urllib.request.Request(url, headers={
+                    "X-Forwarded-For": "203.0.113.77, 198.51.100.10"})
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(forged)
+                self.assertEqual(denied.exception.code, 403)
+                denied.exception.close()
+                valid = urllib.request.Request(url, headers={
+                    "X-Forwarded-For": "198.51.100.10, 203.0.113.77"})
+                with urllib.request.urlopen(valid) as response:
+                    self.assertEqual(response.status, 200)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+        finally:
+            env.close()
+
 class IngestTest(unittest.TestCase):
+
     def setUp(self):
         self.env = Env()
+        self.addCleanup(self.env.close)
         self.cfg = self.env.cfg
-
-    def tearDown(self):
-        self.env.close()
 
     def test_partial_line_rotation_nul_and_idempotency(self):
         log = self.env.log()
         ing = ingest.Ingester(self.cfg)
+        self.addCleanup(ing.close)
         with open(log, "w") as f:
             for i in range(100):
                 f.write(proxy_line(i))
@@ -142,7 +284,10 @@ class IngestTest(unittest.TestCase):
         self.assertEqual(by_bot.get("GPTBot"), 5)
         self.assertEqual(rule, 5)  # regra do Advanced do proxy host 30 (banco fake)
         c = sqlite3.connect(config.db_path(self.cfg))
-        self.assertEqual(c.execute("SELECT SUM(malformed), SUM(repaired) FROM files").fetchone(), (1, 1))
+        try:
+            self.assertEqual(c.execute("SELECT SUM(malformed), SUM(repaired) FROM files").fetchone(), (1, 1))
+        finally:
+            c.close()
 
     def test_crash_mid_batch_does_not_double_count(self):
         log = self.env.log()
@@ -150,6 +295,7 @@ class IngestTest(unittest.TestCase):
             for i in range(50):
                 f.write(proxy_line(i))
         ing = ingest.Ingester(self.cfg)
+        self.addCleanup(ing.close)
         orig = ing._ingest_batch
         ing._ingest_batch = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
         ing.run_once()
@@ -163,11 +309,47 @@ class IngestTest(unittest.TestCase):
             f.write(proxy_line(2))
         self.cfg["ingest"]["exclude_hosts"] = ["painel.local"]
         ing = ingest.Ingester(self.cfg)
+        self.addCleanup(ing.close)
         ing.run_once()
         self.assertEqual(totals(self.cfg)[0], 1)
         ing.reset()
         ing.run_once()
         self.assertEqual(totals(self.cfg)[0], 1)
+
+    def test_log_only_mode_with_configured_domains_and_block_rules(self):
+        self.cfg["paths"]["npm_db"] = os.path.join(self.env.root, "missing.sqlite")
+        self.cfg["sites"] = {"30": {
+            "name": "Demo", "domains": ["example.com", "www.example.com"],
+            "ua_rules": [{"pattern": "GPTBot", "status": 403}],
+        }}
+        config.validate(self.cfg)
+        with open(self.env.log(), "w") as file:
+            file.write(proxy_line(1, ua="GPTBot/1.2", status=403))
+        ing = ingest.Ingester(self.cfg)
+        self.addCleanup(ing.close)
+        ing.run_once()
+        self.assertEqual(totals(self.cfg)[2], 1)
+        app = api.Api(self.cfg)
+        self.addCleanup(app.close_thread)
+        site = next(s for s in app.meta({})["sites"] if s["id"] == 30)
+        self.assertEqual((site["type"], site["name"], site["deleted"]), ("log-only", "Demo", False))
+        self.assertEqual(site["domains"], ["example.com", "www.example.com"])
+        self.assertEqual(app.health({})["rules"][0]["rules"][0]["status"], 403)
+
+    def test_manual_rule_override_replaces_sqlite_advanced_rule(self):
+        self.cfg["sites"] = {"30": {"ua_rules": [{"pattern": "ClaudeBot", "status": 403}]}}
+        config.validate(self.cfg)
+        with open(self.env.log(), "w") as file:
+            file.write(proxy_line(1, ua="GPTBot/1.2", status=403))
+            file.write(proxy_line(2, ua="ClaudeBot/1.0", status=403))
+        ing = ingest.Ingester(self.cfg)
+        self.addCleanup(ing.close)
+        ing.run_once()
+        self.assertEqual(totals(self.cfg)[2], 1)
+        app = api.Api(self.cfg)
+        self.addCleanup(app.close_thread)
+        rule = next(s for s in app.meta({})["sites"] if s["id"] == 30)["ua_rules"]
+        self.assertEqual(rule, [{"pattern": "ClaudeBot", "status": 403}])
 
 
 class ApiTest(unittest.TestCase):
@@ -180,11 +362,16 @@ class ApiTest(unittest.TestCase):
             f.write(proxy_line(1, ts="05/Oct/2026:17:30:00 -0900"))
             f.write(proxy_line(2, ts="05/Oct/2026:17:50:00 -0900"))
             f.write(proxy_line(3, ua="GPTBot/1.2", status=403, ts="05/Oct/2026:10:40:00 -0900"))
-        ingest.Ingester(cls.env.cfg).run_once()
+        ing = ingest.Ingester(cls.env.cfg)
+        try:
+            ing.run_once()
+        finally:
+            ing.close()
         cls.api = api.Api(cls.env.cfg)
 
     @classmethod
     def tearDownClass(cls):
+        cls.api.close_thread()
         cls.env.close()
 
     def window(self, **kw):

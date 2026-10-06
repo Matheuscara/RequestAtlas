@@ -44,6 +44,8 @@ class Api:
         self.clf = classify.Classifier(cfg)
         self.local = threading.local()
         self.cache = OrderedDict()
+        self.started_at = time.time()
+        self.ingest_thread = None
         self.cache_lock = threading.Lock()
         self.event_list = []
         for e in cfg["events"]:
@@ -63,6 +65,17 @@ class Api:
                                    "pages", "refresh_seconds", "show_caveats", "caveat_text", "links", "colors")} | {
             "tzs": self.tzs, "privacy": self.cfg["privacy"], "interval": self.cfg["ingest"]["interval"]}
 
+    def healthz(self):
+        """Probe sem dados sensíveis; 503 se o coletor parar de completar ciclos."""
+        row = self.q("SELECT v FROM meta WHERE k = 'last_cycle_end'")
+        last = int(row[0][0]) if row else 0
+        now = time.time()
+        live = self.ingest_thread is None or self.ingest_thread.is_alive()
+        first_pass = not last and self.ingest_thread is not None and live
+        grace = now - self.started_at < 600 and live
+        recent = bool(last) and now - last <= max(120, 3 * self.cfg["ingest"]["interval"])
+        healthy = first_pass or grace or recent
+        return (200 if healthy else 503), b"ok\n" if healthy else b"stale\n"
     def conn(self):
         c = getattr(self.local, "conn", None)
         if c is None:
@@ -72,6 +85,12 @@ class Api:
 
     def q(self, sql, args=()):
         return self.conn().execute(sql, args).fetchall()
+
+    def close_thread(self):
+        conn = getattr(self.local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self.local.conn = None
 
     # ------------------------------------------------------------------ cache
     def cached(self, key, fn, ttl=30):
@@ -250,23 +269,28 @@ class Api:
             tot = per_site.get(s["id"], (0, 0, None))
             o = overrides.get(s["id"], {})
             out_sites.append({
-                "id": s["id"], "type": s["type"], "domains": s["domains"], "forward": s["forward"],
+                "id": s["id"], "type": s["type"], "domains": o.get("domains", s["domains"]), "forward": s["forward"],
                 "name": o.get("name"), "hidden": bool(o.get("hidden")),
                 "enabled": s["enabled"], "deleted": s["deleted"], "ssl": s["ssl"],
-                "ua_rules": [{"pattern": r["pattern"], "status": r["status"]} for r in s["ua_rules"]],
+                "ua_rules": o["ua_rules"] if "ua_rules" in o else
+                            [{"pattern": r["pattern"], "status": r["status"]} for r in s["ua_rules"]],
                 "hits_total": tot[0] or 0, "hits_7d": tot[1] or 0, "last_hour": tot[2],
                 "hosts": hosts.get(s["id"], []),
             })
-        for sid, tot in per_site.items():
-            if sid not in known:
-                o = overrides.get(sid, {})
-                out_sites.append({
-                    "id": sid, "type": "fallback" if sid == 0 else "removed",
-                    "domains": hosts.get(sid, [])[:1] if sid else [], "name": o.get("name"), "hidden": bool(o.get("hidden")),
-                    "forward": None, "enabled": sid == 0, "deleted": sid != 0, "ssl": False, "ua_rules": [],
-                    "hits_total": tot[0] or 0, "hits_7d": tot[1] or 0, "last_hour": tot[2],
-                    "hosts": hosts.get(sid, [])[:20],
-                })
+        npm_available = os.path.isfile(self.cfg["paths"]["npm_db"])
+        for sid in (set(per_site) | set(overrides)) - known:
+            tot = per_site.get(sid, (0, 0, None))
+            o = overrides.get(sid, {})
+            removed = npm_available and sid not in overrides and sid != 0
+            out_sites.append({
+                "id": sid, "type": "fallback" if sid == 0 else "removed" if removed else "log-only",
+                "domains": o.get("domains", hosts.get(sid, [])[:1] if sid else []),
+                "name": o.get("name"), "hidden": bool(o.get("hidden")),
+                "forward": None, "enabled": not removed, "deleted": removed,
+                "ssl": False, "ua_rules": o.get("ua_rules", []),
+                "hits_total": tot[0] or 0, "hits_7d": tot[1] or 0, "last_hour": tot[2],
+                "hosts": hosts.get(sid, [])[:20],
+            })
         seen = dict(self.q("SELECT bot, SUM(hits) FROM hits GROUP BY bot"))
         bots = [{"id": i, "name": n, "group": g, "hits": seen.get(i, 0)} for i, n, g in self.bot_rows()]
         metam = dict(self.q("SELECT k, v FROM meta"))
@@ -601,6 +625,20 @@ class Api:
         bad = self.q("SELECT seen, file, reason, line FROM malformed ORDER BY id DESC LIMIT 25")
         counts = {t: self.q(f"SELECT COUNT(*) FROM {t}")[0][0] for t in ("hits", "path_hits", "ip_hits", "ua_hits", "ref_hits", "paths", "uas", "ips")}
         db_size = sum(os.path.getsize(self.db_path + s) for s in ("", "-wal") if os.path.exists(self.db_path + s))
+        site_rules = {}
+        for site in store.read_npm_sites(self.cfg["paths"]["npm_db"]):
+            if site["ua_rules"]:
+                site_rules[site["id"]] = {
+                    "site": site["id"], "domains": site["domains"],
+                    "rules": [{"pattern": r["pattern"], "status": r["status"]} for r in site["ua_rules"]],
+                }
+        for sid, override in self.cfg["sites"].items():
+            if "ua_rules" in override:
+                if override["ua_rules"]:
+                    row = site_rules.setdefault(sid, {"site": sid, "domains": override.get("domains", []), "rules": []})
+                    row["rules"] = override["ua_rules"]
+                else:
+                    site_rules.pop(sid, None)
         return {
             "files": [{"fp": r[0][:10], "base": r[1], "path": r[2], "name": os.path.basename(r[2] or ""),
                        "offset": r[3], "size": sizes.get(r[2]), "csize": r[4], "done": bool(r[5]), "lines": r[6],
@@ -610,9 +648,7 @@ class Api:
             "counts": counts, "db_size": db_size, "now": int(time.time()),
             "interval": self.cfg["ingest"]["interval"], "log_offsets": [o for o in (metam.get("log_offsets") or "").split(",") if o],
             "config_path": self.cfg.get("_path"), "reindex_needed": metam.get("rules_fp") not in (None, config.rules_fingerprint(self.cfg)),
-            "rules": [{"site": s["id"], "domains": s["domains"],
-                       "rules": [{"pattern": r["pattern"], "status": r["status"]} for r in s["ua_rules"]]}
-                      for s in store.read_npm_sites(self.cfg["paths"]["npm_db"]) if s["ua_rules"]],
+            "rules": list(site_rules.values()),
             **self.clf.describe(),
         }
 
@@ -640,6 +676,7 @@ def make_server(api, cfg):
     nets = [ipaddress.ip_network(n, strict=False) for n in srv_cfg["allow_networks"]]
     trust_xff = bool(srv_cfg["trust_x_forwarded_for"])
     user, pwd = srv_cfg["auth_user"], srv_cfg["auth_password"]
+    trusted = [ipaddress.ip_network(n, strict=False) for n in srv_cfg["trusted_proxy_networks"]]
     expected = ("Basic " + base64.b64encode(f"{user}:{pwd}".encode()).decode()) if user else None
     web_root = os.path.realpath(WEB_DIR)
 
@@ -649,12 +686,27 @@ def make_server(api, cfg):
 
         def client_ip(self):
             ip = self.client_address[0]
-            if trust_xff:
+            try:
+                peer = ipaddress.ip_address(ip)
+                if peer.version == 6 and peer.ipv4_mapped:
+                    peer = peer.ipv4_mapped
+            except ValueError:
+                return ip
+            if trust_xff and any(peer in network for network in trusted):
                 xff = self.headers.get("X-Forwarded-For")
                 if xff:
-                    ip = xff.split(",")[0].strip()
-            return ip
-
+                    # Walk right-to-left: clients may inject a forged leftmost XFF entry.
+                    for item in reversed(xff.split(",")):
+                        candidate = item.strip()
+                        try:
+                            address = ipaddress.ip_address(candidate)
+                            if address.version == 6 and address.ipv4_mapped:
+                                address = address.ipv4_mapped
+                        except ValueError:
+                            return candidate  # malformed -> denied by allowed()
+                        if not any(address in network for network in trusted):
+                            return str(address)
+            return str(peer)
         def allowed(self):
             if not nets:
                 return True
@@ -685,18 +737,28 @@ def make_server(api, cfg):
             self.do_GET()
 
         def do_GET(self):
+            u = urlparse(self.path)
+            if u.path == "/healthz":
+                peer = ipaddress.ip_address(self.client_address[0])
+                if not peer.is_loopback and not self.allowed():
+                    return self.send(403, b"forbidden\n", "text/plain")
+                try:
+                    code, body = api.healthz()
+                except Exception:
+                    log.exception("healthz falhou")
+                    code, body = 503, b"stale\n"
+                return self.send(code, body, "text/plain", (("Cache-Control", "no-store"),))
             if not self.allowed():
                 return self.send(403, b"forbidden", "text/plain")
             if expected and not hmac.compare_digest(self.headers.get("Authorization", ""), expected):
                 return self.send(401, b"auth required", "text/plain", (("WWW-Authenticate", 'Basic realm="logsNPM"'),))
-            u = urlparse(self.path)
             if u.path.startswith("/api/"):
                 t0 = time.time()
                 try:
                     code, body = api.handle(u.path, u.query)
-                except Exception as e:  # noqa: BLE001
+                except Exception:
                     log.exception("erro em %s", self.path)
-                    code, body = 500, {"error": f"{type(e).__name__}: {e}"}
+                    code, body = 500, {"error": "internal server error"}
                 data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
                 return self.send(code, data, "application/json; charset=utf-8",
                                  (("Cache-Control", "no-store"), ("X-Elapsed-Ms", f"{(time.time() - t0) * 1000:.0f}")))
@@ -719,6 +781,12 @@ def make_server(api, cfg):
             if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
                 ctype += "; charset=utf-8"
             self.send(200, data, ctype, (("ETag", etag), ("Cache-Control", cache)))
+
+        def finish(self):
+            try:
+                super().finish()
+            finally:
+                api.close_thread()
 
         def log_message(self, fmt, *args):
             pass

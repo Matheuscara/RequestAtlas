@@ -1,9 +1,20 @@
 # logsNPM — configuração de exemplo. Copie para logsnpm.toml e ajuste.
-# Tudo é opcional: o que não estiver aqui usa o padrão mostrado (comentado).
-# Variáveis de ambiente (LOGSNPM_*) sobrescrevem o arquivo — veja o README.
-# Mudanças em [classify], [bots], [privacy], ingest.exclude_hosts e sites.*.api_* exigem `logsnpm reindex`.
+# Tudo é opcional: o que não estiver aqui usa o padrão mostrado (comentado). Opção desconhecida ou de
+# tipo errado impede a inicialização — `logsnpm check` mostra o erro.
+#
+# Onde fica: --config ou $LOGSNPM_CONFIG (precisa existir); senão ./logsnpm.toml ou /etc/logsnpm/logsnpm.toml.
+# No Docker: coloque em $LOGSNPM_CONFIG_DIR/logsnpm.toml (montado em /etc/logsnpm, detectado sozinho).
+#
+# Precedência: padrões < este arquivo < LOGSNPM_* (atalhos) < LOGSNPM__SEÇÃO__CHAVE.
+# Qualquer chave abaixo vira variável: [ui] title → LOGSNPM__UI__TITLE, [sites.30] name →
+# LOGSNPM__SITES__30__NAME, [[events]] → LOGSNPM__EVENTS__ITEMS (lista JSON). O valor é JSON
+# (30, true, ["a", "b"], {"html": "#f97316"}); se não for JSON válido, vira texto. Tabelas e listas
+# passadas por variável substituem as do arquivo inteiras.
+#
+# Mudanças em [classify], [bots], [privacy], ingest.exclude_hosts e sites.*.api_*/ua_rules exigem `logsnpm reindex`.
 
 [paths]
+# No Docker estes caminhos são definidos pela imagem (/npm, /var/lib/logsnpm, /geoip) e ignoram o arquivo.
 # log_dir = "/data/logs"                    # diretório de logs do NPM (proxy-host-N_access.log + .gz)
 # npm_db = "/data/database.sqlite"          # banco do NPM, aberto SOMENTE LEITURA (nomes de domínio, regras)
 # nginx_custom_dir = "/data/nginx/custom"   # para detectar `geo $blocked_ip { ... }` (opcional)
@@ -14,26 +25,31 @@
 [ingest]
 # interval = 60                             # segundos entre ciclos de leitura
 # retention_days = 180                      # detalhe por página/IP/UA; o total por hora fica para sempre
+# batch_lines = 60000                       # linhas por transação na ingestão
 # exclude_hosts = ["painel.minharede.lan"]  # hosts ignorados na ingestão (ex.: o próprio painel)
 # blocked_ip_geo_var = "blocked_ip"         # nome da variável do bloco geo que bloqueia IPs (403 intencional)
 # log_globs = ["proxy-host-*_access.log*", "dead-host-*_access.log*", "redirection-host-*_access.log*",
 #              "fallback_access.log*", "fallback_http_access.log*"]
 
 [server]
-# listen = "0.0.0.0"
+# listen = "127.0.0.1"                      # padrão privado; "0.0.0.0" expõe em todas as interfaces.
+#                                           # No Docker é sempre 0.0.0.0:7881 e a exposição é o `ports:` do host.
 # port = 7881
 # allow_networks = ["192.168.0.0/16", "100.64.0.0/10", "127.0.0.1/32"]   # vazio = qualquer IP
 # auth_user = ""                            # basic auth (defina os dois ou nenhum)
-# auth_password = ""
-# trust_x_forwarded_for = false             # true se estiver atrás de um proxy reverso confiável
+# auth_password = ""                        # ou LOGSNPM_AUTH_PASSWORD_FILE=/caminho (não combine os dois)
+# trust_x_forwarded_for = false             # true só atrás de proxy reverso, e exige a lista abaixo
+# trusted_proxy_networks = ["172.18.0.0/16"]   # IPs do proxy cujo X-Forwarded-For é aceito (ex.: rede Docker do NPM)
 # cache_ttl = 30
 
 [ui]
+# Dica: o botão “Aparência” do painel faz uma prévia local de título, subtítulo e cores e
+# baixa um logsnpm-ui.toml com [ui]/[ui.colors] para mesclar aqui.
 # title = "logsNPM"
 # subtitle = "análise de tráfego do NPM"
 # language = "pt-BR"                        # pt-BR | en
-# logo_url = ""                             # URL de uma imagem quadrada; vazio = ícone padrão
-# accent = ["#818cf8", "#22d3ee"]           # gradiente da marca
+# logo_url = ""                             # URL http(s) ou caminho /… de uma imagem quadrada; vazio = ícone padrão
+# accent = ["#818cf8", "#22d3ee"]           # gradiente da marca (uma ou duas cores)
 # default_period = "7d"                     # 24h | 7d | 30d | all
 # default_tz = "UTC"                        # qualquer fuso IANA, ex.: "America/Sao_Paulo"
 # timezones = ["America/Sao_Paulo", "UTC", { id = "America/Adak", label = "Servidor (−09:00)" }]
@@ -46,8 +62,9 @@
 # [[ui.links]]
 # label = "GoAccess"
 # url = "/goaccess/"
+# title = "Painel antigo"                   # opcional: dica ao passar o mouse
 
-# Cores (qualquer chave omitida usa o padrão)
+# Cores (#RGB ou #RRGGBB; qualquer chave omitida usa o padrão)
 # [ui.colors]
 # html = "#818cf8"
 # static = "#22d3ee"
@@ -56,6 +73,7 @@
 # bot = "#a78bfa"
 # nonbot = "#34d399"
 # noua = "#f472b6"
+# s1 = "#64748b"
 # s2 = "#34d399"
 # s3 = "#60a5fa"
 # s4 = "#fbbf24"
@@ -84,16 +102,21 @@
 # group = "monitoring"                      # ai | search | seo | social | monitoring | scanner | tool | custom
 # pattern = "meu-monitor/"
 
-# Ajustes por proxy host (a chave é o ID do NPM)
+# Ajustes por proxy host (a chave é o ID do NPM, o N de proxy-host-N_access.log)
 # [sites.30]
 # name = "Minha loja"                       # nome exibido no lugar do domínio
 # hidden = false                            # esconde das listas (os números continuam no total)
 # api_prefixes = ["/api/"]
 # api_hosts = ["dados.minhaloja.com"]
+# Substituem, para este ID, o que viria do database.sqlite do NPM. Servem sobretudo para NPM em
+# MySQL/MariaDB/Postgres (sem SQLite): os logs são lidos igual, mas domínios e regras de 403 só vêm daqui;
+# destino, SSL e estado ativo/removido do host continuam indisponíveis.
+# domains = ["minhaloja.com", "www.minhaloja.com"]
+# ua_rules = [{ pattern = "GPTBot|ClaudeBot", status = 403 }]   # regex sem diferenciar maiúsculas; status 400–599
 
 # Eventos marcados nos gráficos, com comparação antes × depois na página Status
 # [[events]]
-# ts = 2026-10-05T10:06:16-09:00
+# ts = 2026-10-05T10:06:16-09:00            # precisa do deslocamento UTC
 # site = 30                                 # omita para “todos os proxy hosts”
 # bot = "GPTBot"                            # opcional: compara as requisições desse bot
 # title = "GPTBot bloqueado (403)"

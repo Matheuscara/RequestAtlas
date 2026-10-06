@@ -1,0 +1,7 @@
+# Contexto de build mínimo: só o pacote e a licença entram na imagem.
+# Configs privadas (logsnpm.toml, .env, config/), dados, logs do NPM, GeoLite2, .git e screenshots ficam de fora.
+*
+!LICENSE
+!logsnpm/
+**/__pycache__
+**/*.py[cod]

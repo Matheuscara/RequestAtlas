@@ -10,7 +10,7 @@ const S = {
   cfg: null, meta: null, page: "overview", charts: [], seq: 0, timer: null, lang: "pt-BR",
   f: { site: "", p: "7d", from: "", to: "", tz: "", bot: "", status: "", kind: "" },
   ui: { ovMode: "kind", botMode: "bot", bucket: "auto", evWin: 24, pq: "", psort: "hits", poff: 0 },
-  worldLoaded: false,
+  worldLoaded: false, look: {},
 };
 let NF, NC, REGION;
 
@@ -41,6 +41,8 @@ const C = {
   s1: "#64748b", s2: "#34d399", s3: "#60a5fa", s4: "#fbbf24", s5: "#f87171", rule: "#c084fc", s429: "#fb923c",
 };
 let PALETTE = ["#818cf8", "#22d3ee", "#f472b6", "#fbbf24", "#34d399", "#fb923c", "#a78bfa", "#60a5fa", "#f87171", "#2dd4bf", "#e879f9", "#facc15", "#94a3b8"];
+const C_BUILTIN = { ...C };
+const PALETTE_BUILTIN = [...PALETTE];
 const KIND = () => ({ html: t("Páginas HTML"), static: t("Arquivos estáticos"), api: t("API / dados"), other: t("Outros") });
 const KIND_SHORT = () => ({ html: "HTML", static: t("Estático"), api: "API", other: t("Outro") });
 const BOTFLAG = () => ({ bot: t("Bots identificados"), nonbot: t("Não identificado como bot"), noua: t("Sem User-Agent") });
@@ -110,6 +112,13 @@ function toast(msg) {
   const el = $("#toast"); el.textContent = msg; el.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => (el.hidden = true), 7000);
 }
+function saveFile(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 0);
+}
 
 /* ------------------------------------------------------------------ período & API */
 function range() {
@@ -174,20 +183,190 @@ function go(page, patch = {}) {
 function applyBranding() {
   const c = S.cfg;
   document.documentElement.lang = S.lang;
-  document.title = c.subtitle ? `${c.title} · ${c.subtitle}` : c.title;
-  $(".brand-text b").textContent = c.title;
-  $(".brand-text small").textContent = c.subtitle || t("análise de tráfego do NPM");
-  const [a1, a2] = c.accent && c.accent.length ? [c.accent[0], c.accent[1] || c.accent[0]] : ["#818cf8", "#22d3ee"];
-  document.documentElement.style.setProperty("--accent", `linear-gradient(135deg, ${a1} 0%, ${a2} 100%)`);
-  document.documentElement.style.setProperty("--a1", a1);
   if (c.logo_url) $(".brand-mark").innerHTML = `<img src="${esc(c.logo_url)}" alt="">`;
-  Object.assign(C, c.colors || {});
-  if (c.colors && Array.isArray(c.colors.palette)) PALETTE = c.colors.palette;
   const labels = PAGE_LABEL();
   $("#nav").innerHTML = c.pages.map((p) => `<a href="#/${ROUTES[p]}" data-page="${p}">${esc(labels[p])}</a>`).join("") +
     (c.links || []).map((l, i) => `<a href="${esc(l.url)}" class="ext${i === 0 ? " first" : ""}" target="_blank" rel="noopener" title="${esc(l.title || "")}">${esc(l.label)} ↗</a>`).join("");
   $$("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
   $$("[data-i18n-title]").forEach((el) => (el.title = t(el.dataset.i18nTitle)));
+  applyLook();
+}
+
+/* ------------------------------------------------------------------ aparência: prévia local
+   Sobrepõe título, subtítulo, destaque e cores do /api/config só neste navegador (localStorage).
+   S.look guarda apenas o que difere do servidor; nada é enviado. O trecho TOML exportado é o caminho para tornar permanente. */
+const LOOK_KEY = "logsnpm-look";
+const LOOK_GROUPS = () => [
+  [t("Tipos de requisição"), ["html", "static", "api", "other"]],
+  [t("Classificação do User-Agent"), ["bot", "nonbot", "noua"]],
+  [t("Status HTTP"), ["s2", "s3", "s4", "s5", "rule", "s429", "s1"]],
+];
+const COLOR_LABEL = () => ({ ...KIND(), ...BOTFLAG(), s1: t("1xx informativo"), s2: t("2xx sucesso"), s3: t("3xx redirecionamento"),
+  s4: t("4xx erro do cliente"), s5: t("5xx falha do servidor"), rule: t("403 por regra de bloqueio"), s429: t("429 rate limit") });
+const isHex = (v) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+const cleanText = (v, max) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, max).trim();
+function toHex(color) {
+  const s = String(color ?? "").trim();
+  if (isHex(s)) return s.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(s)) return `#${[...s.slice(1)].map((x) => x + x).join("")}`.toLowerCase();
+  const ctx = (toHex.ctx ||= document.createElement("canvas").getContext("2d"));
+  ctx.fillStyle = "#000000"; ctx.fillStyle = s;
+  const v = ctx.fillStyle;
+  if (isHex(v)) return v.toLowerCase();
+  const m = v.match(/[\d.]+/g);
+  return m ? `#${m.slice(0, 3).map((x) => Math.round(+x).toString(16).padStart(2, "0")).join("")}` : "#000000";
+}
+function lookOf(o) {
+  const c = S.cfg;
+  const acc = Array.isArray(c.accent) && c.accent.length ? [c.accent[0], c.accent[1] || c.accent[0]] : ["#818cf8", "#22d3ee"];
+  return {
+    title: o.title ?? c.title,
+    subtitle: o.subtitle ?? (c.subtitle || ""),
+    accent: o.accent || acc,
+    colors: { ...C_BUILTIN, ...(c.colors || {}), ...(o.colors || {}) },
+  };
+}
+const lookCount = (o) => (o.title ? 1 : 0) + ("subtitle" in o ? 1 : 0) + (o.accent ? 1 : 0) + Object.keys(o.colors || {}).length;
+function loadLook() {
+  let o;
+  try { o = JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") || {}; } catch { o = {}; }
+  const out = {};
+  if (typeof o.title === "string" && cleanText(o.title, 60)) out.title = cleanText(o.title, 60);
+  if (typeof o.subtitle === "string") out.subtitle = cleanText(o.subtitle, 120);
+  if (Array.isArray(o.accent) && o.accent.length === 2 && o.accent.every(isHex)) out.accent = o.accent.map((v) => v.toLowerCase());
+  const cols = Object.entries(o.colors || {}).filter(([k, v]) => k in C_BUILTIN && isHex(v));
+  if (cols.length) out.colors = Object.fromEntries(cols.map(([k, v]) => [k, v.toLowerCase()]));
+  return out;
+}
+function storeLook() {
+  try {
+    if (lookCount(S.look)) localStorage.setItem(LOOK_KEY, JSON.stringify(S.look));
+    else localStorage.removeItem(LOOK_KEY);
+  } catch { /* armazenamento bloqueado: a prévia vale só até recarregar */ }
+}
+function applyLook() {
+  const L = lookOf(S.look);
+  document.title = L.subtitle ? `${L.title} · ${L.subtitle}` : L.title;
+  $(".brand-text b").textContent = L.title;
+  $(".brand-text small").textContent = L.subtitle || t("análise de tráfego do NPM");
+  const root = document.documentElement.style;
+  root.setProperty("--accent", `linear-gradient(135deg, ${L.accent[0]} 0%, ${L.accent[1]} 100%)`);
+  root.setProperty("--a1", L.accent[0]);
+  Object.assign(C, L.colors);
+  PALETTE = Array.isArray(L.colors.palette) ? L.colors.palette : PALETTE_BUILTIN;
+  const active = lookCount(S.look) > 0;
+  const btn = $("#look-btn");
+  const label = active ? t("Aparência (prévia local ativa)") : t("Aparência");
+  btn.classList.toggle("on", active);
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+let lookRepaint;
+function previewLook(o) {
+  const before = JSON.stringify(lookOf(S.look).colors);
+  S.look = o;
+  storeLook();
+  applyLook();
+  // cores de gráficos e métricas são embutidas na renderização: redesenha a página (as respostas vêm do cache da API)
+  if (JSON.stringify(lookOf(o).colors) !== before) { clearTimeout(lookRepaint); lookRepaint = setTimeout(() => render(true), 200); }
+}
+function tomlStr(v) {
+  let s = String(v ?? "");
+  if (s.toWellFormed) s = s.toWellFormed();
+  const map = { "\\": "\\\\", '"': '\\"', "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r" };
+  return `"${s.replace(/[\\"\u0000-\u001f\u007f]/g, (ch) => map[ch] || `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`)}"`;
+}
+function lookToml() {
+  const L = lookOf(S.look);
+  const key = (k) => (/^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k));
+  const val = (v) => (Array.isArray(v) ? `[${v.map(tomlStr).join(", ")}]` : tomlStr(v));
+  const plain = (v) => typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string"));
+  const note = (s) => `# ${s.replace(/[\u0000-\u001f\u007f]+/g, " ")}`;
+  return [
+    note(`logsNPM · ${t("aparência exportada da prévia local")} · ${new Date().toISOString().slice(0, 10)}`),
+    note(t("Mescle estas chaves nas tabelas [ui] e [ui.colors] do seu logsnpm.toml (o TOML não aceita a mesma tabela duas vezes) e reinicie o logsNPM.")),
+    "", "[ui]",
+    `title = ${tomlStr(L.title)}`,
+    `subtitle = ${tomlStr(L.subtitle)}`,
+    `accent = ${val(L.accent)}`,
+    "", "[ui.colors]",
+    ...Object.entries(L.colors).filter(([, v]) => plain(v)).map(([k, v]) => `${key(k)} = ${val(v)}`),
+    "",
+  ].join("\n");
+}
+function lookFromForm(dlg) {
+  const B = lookOf({});
+  const o = {};
+  const title = cleanText($("#ap-title", dlg).value, 60);
+  if (title && title !== B.title) o.title = title;
+  const subtitle = cleanText($("#ap-sub", dlg).value, 120);
+  if (subtitle !== B.subtitle) o.subtitle = subtitle;
+  const accent = $$("[data-accent]", dlg).map((i) => i.value.toLowerCase());
+  if (accent.some((v, i) => v !== toHex(B.accent[i]))) o.accent = accent;
+  const cols = $$("[data-color]", dlg).map((i) => [i.dataset.color, i.value.toLowerCase()]).filter(([k, v]) => v !== toHex(B.colors[k]));
+  if (cols.length) o.colors = Object.fromEntries(cols);
+  return o;
+}
+function fillLookForm(dlg) {
+  const L = lookOf(S.look);
+  $("#ap-title", dlg).value = L.title;
+  $("#ap-sub", dlg).value = L.subtitle;
+  $$("[data-accent]", dlg).forEach((i) => (i.value = toHex(L.accent[+i.dataset.accent])));
+  $$("[data-color]", dlg).forEach((i) => (i.value = toHex(L.colors[i.dataset.color])));
+}
+function syncLookForm(dlg) {
+  const o = S.look;
+  const B = lookOf({});
+  $$("[data-text]", dlg).forEach((i) => i.closest(".ap-field").classList.toggle("mod", i.dataset.text in o));
+  $$("[data-accent]", dlg).forEach((i) => i.closest(".ap-color").classList.toggle("mod", !!o.accent && i.value !== toHex(B.accent[+i.dataset.accent])));
+  $$("[data-color]", dlg).forEach((i) => i.closest(".ap-color").classList.toggle("mod", !!o.colors?.[i.dataset.color]));
+  $$("[data-accent], [data-color]", dlg).forEach((i) => ($("code", i.closest(".ap-color")).textContent = i.value));
+  const k = lookCount(o);
+  const msg = !k ? t("Sem ajustes locais: exibindo a configuração do servidor.")
+    : k === 1 ? t("1 ajuste local em prévia.") : t("{n} ajustes locais em prévia.", { n: k });
+  const state = $("#ap-state", dlg);
+  if (state.textContent !== msg) state.textContent = msg;
+  $("#ap-toml", dlg).textContent = lookToml();
+}
+function openLook() {
+  const dlg = $("#look");
+  const lbl = COLOR_LABEL();
+  const sw = (attr, label) => `<label class="ap-color"><input type="color" ${attr}><span>${esc(label)}</span><code aria-hidden="true"></code></label>`;
+  dlg.innerHTML = `<div class="ap">
+    <header class="ap-h"><h2 id="look-h">${t("Aparência")}</h2>
+      <button type="button" class="icon-btn" data-close title="${esc(t("Fechar"))}" aria-label="${esc(t("Fechar"))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+    <div class="ap-b">
+      ${notice(t("<b>Prévia local, só neste navegador.</b> Os ajustes ficam guardados no localStorage e <b>não alteram a configuração do servidor</b> nem o que outras pessoas veem. Para torná-los permanentes, baixe o trecho TOML e mescle no logsnpm.toml."))}
+      <fieldset><legend>${t("Marca")}</legend>
+        <label class="ap-field"><span>${t("Título")}</span><input id="ap-title" data-text="title" maxlength="60" autocomplete="off" spellcheck="false" placeholder="${esc(lookOf({}).title)}" autofocus></label>
+        <label class="ap-field"><span>${t("Subtítulo")}</span><input id="ap-sub" data-text="subtitle" maxlength="120" autocomplete="off" placeholder="${esc(t("análise de tráfego do NPM"))}"></label>
+      </fieldset>
+      <fieldset><legend>${t("Destaque (gradiente da marca)")}</legend>
+        <div class="ap-grid">${sw('data-accent="0"', t("Cor inicial"))}${sw('data-accent="1"', t("Cor final"))}</div>
+        <div class="ap-swatch" aria-hidden="true"></div></fieldset>
+      ${LOOK_GROUPS().map(([title, keys]) => `<fieldset><legend>${esc(title)}</legend>
+        <div class="ap-grid">${keys.map((k) => sw(`data-color="${k}"`, lbl[k])).join("")}</div></fieldset>`).join("")}
+      <details class="ap-toml"><summary>${t("Ver trecho TOML")}</summary><pre id="ap-toml"></pre></details>
+    </div>
+    <footer class="ap-f"><p id="ap-state" class="small muted" role="status"></p>
+      <div class="toolbar"><button type="button" class="btn ghost" data-reset>${t("Restaurar padrões do servidor")}</button>
+        <button type="button" class="btn" data-export>${t("Baixar TOML")}</button></div></footer></div>`;
+  fillLookForm(dlg);
+  syncLookForm(dlg);
+  let down = null;
+  dlg.onpointerdown = (e) => (down = e.target);
+  dlg.oninput = (e) => {
+    if (!e.target.matches("input")) return;
+    previewLook(lookFromForm(dlg));
+    syncLookForm(dlg);
+  };
+  dlg.onclick = (e) => {
+    if ((e.target === dlg && down === dlg) || e.target.closest("[data-close]")) dlg.close();
+    else if (e.target.closest("[data-reset]")) { previewLook({}); fillLookForm(dlg); syncLookForm(dlg); }
+    else if (e.target.closest("[data-export]")) saveFile("logsnpm-ui.toml", lookToml(), "application/toml");
+  };
+  dlg.onclose = () => $("#look-btn").focus();
+  dlg.showModal();
 }
 function siteName(id) {
   const s = (S.meta?.sites || []).find((x) => String(x.id) === String(id));
@@ -794,11 +973,7 @@ async function pagePages() {
           const cols = ["host", "path", "kind", "hits", "bot", "s2xx", "s3xx", "s4xx", "s5xx", "bytes"];
           const cell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
           const csv = [cols.join(","), ...all.rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-          a.download = `logsnpm-paginas-${localDateStr(range().from)}_${localDateStr(range().to - 1)}.csv`;
-          a.click();
-          URL.revokeObjectURL(a.href);
+          saveFile(`logsnpm-paginas-${localDateStr(range().from)}_${localDateStr(range().to - 1)}.csv`, csv, "text/csv;charset=utf-8");
         } catch (e) { toast(e.message); }
       };
     },
@@ -904,7 +1079,7 @@ async function pageHealth() {
         <dt>${t("403 por regra")}</dt><dd>${t("status 403 + UA casando a regra <code>if ($http_user_agent ~* …) { return 403; }</code> do Advanced do proxy host, ou IP do bloco <code>geo</code> configurado. Lido do NPM em modo somente leitura.")}</dd>
         <dt>IPs</dt><dd>${t("guardados como HMAC (chave local) + rede mascarada; país/ASN via GeoLite2.")}</dd></dl>`)}
     </div>
-    ${card(t("Regras de bloqueio detectadas no NPM"), t("Somente leitura — o painel nunca altera proxy hosts"), h.rules.length ? `<table class="tbl"><tbody>${h.rules.map((r) => `<tr><td><b>${esc(r.domains.join(", "))}</b> <span class="dim">#${r.site}</span></td><td>${r.rules.map((x) => `<span class="badge b-rule">UA ~* ${esc(x.pattern)} → ${x.status}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">${t("Nenhuma.")}</div>`, "", "mt")}
+    ${card(t("Regras de bloqueio (NPM/config)"), t("Somente leitura — o painel nunca altera proxy hosts"), h.rules.length ? `<table class="tbl"><tbody>${h.rules.map((r) => `<tr><td><b>${esc(r.domains.join(", "))}</b> <span class="dim">#${r.site}</span></td><td>${r.rules.map((x) => `<span class="badge b-rule">UA ~* ${esc(x.pattern)} → ${x.status}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">${t("Nenhuma.")}</div>`, "", "mt")}
     ${card(t("Arquivos rastreados"), t("Cada linha é um arquivo físico identificado pelo fingerprint"), `<div class="scroll" style="margin:0 -18px"><table class="tbl"><thead><tr><th>Log</th><th>${t("Arquivo atual")}</th><th>${t("Estado")}</th><th>${t("Lido")}</th><th class="num">${t("Linhas")}</th><th class="num">${t("Malformadas")}</th><th class="num">${t("Recuperadas")}</th><th>${t("Primeiro evento")}</th><th>${t("Último evento")}</th><th>Fingerprint</th></tr></thead><tbody>${fileRows}</tbody></table></div>`, "", "mt")}
     ${card(t("Amostras de linhas malformadas"), t("Últimas 25"), h.malformed.length ? `<table class="tbl"><tbody>${h.malformed.map((x) => `<tr><td class="nowrap small">${fmtDT(x.seen)}</td><td class="small">${esc(x.file)}</td><td><span class="badge b-warn">${esc(x.reason)}</span></td><td class="ua">${esc(x.line)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">${t("Nenhuma linha malformada")} 👌</div>`, "", "mt")}
     <details class="rules card mt" style="padding:14px 18px"><summary>${t("Assinaturas de bots ({n} + genérica)", { n: h.bot_rules.length })}</summary>
@@ -921,7 +1096,9 @@ async function boot() {
     NF = new Intl.NumberFormat(S.lang);
     NC = new Intl.NumberFormat(S.lang, { notation: "compact", maximumFractionDigits: 1 });
     try { REGION = new Intl.DisplayNames([S.lang], { type: "region" }); } catch { REGION = null; }
+    S.look = loadLook();
     applyBranding();
+    $("#look-btn").onclick = openLook;
     S.meta = await apiRaw("meta");
   } catch (e) {
     $("#app").innerHTML = `<div class="card"><div class="empty">${t("API indisponível:")} ${esc(e.message)}</div></div>`;

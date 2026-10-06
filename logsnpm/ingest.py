@@ -132,6 +132,12 @@ class Ingester:
     def reload_rules(self):
         sites = store.read_npm_sites(self.cfg["paths"]["npm_db"])
         self.ua_rules = {s["id"]: s["ua_rules"] for s in sites if s["ua_rules"]}
+        for sid, override in self.cfg["sites"].items():
+            if "ua_rules" in override:
+                self.ua_rules[sid] = [{
+                    "pattern": rule["pattern"], "status": rule["status"],
+                    "rx": re.compile(rule["pattern"], re.I),
+                } for rule in override["ua_rules"]]
         self.blocked_nets = store.read_blocked_ips(self.cfg["paths"]["nginx_custom_dir"],
                                                    self.cfg["ingest"]["blocked_ip_geo_var"])
 
@@ -462,6 +468,12 @@ class Ingester:
                   (new_offset, good, len(malformed), skipped, repaired, first_ts, first_ts, last_ts, last_ts,
                    int(time.time()), fp))
         c.commit()
+
+    def close(self):
+        for reader in (self.geo_city, self.geo_asn):
+            if reader is not None:
+                reader.close()
+        self.conn.close()
 
     def prune(self):
         days = int(self.cfg["ingest"]["retention_days"])

@@ -4,6 +4,9 @@ __pycache__/
 build/
 dist/
 logsnpm.toml
+.env
+.env.local
+config/
 data/
 *.db
 *.db-wal

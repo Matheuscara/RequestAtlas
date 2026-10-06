@@ -21,17 +21,20 @@ from . import __version__, api, config, ingest, store
 def ingest_loop(cfg, stop):
     ing = ingest.Ingester(cfg)
     last_prune = 0
-    while not stop.is_set():
-        try:
-            n, secs = ing.run_once()
-            if n:
-                logging.info("ciclo: %d linhas em %.1fs", n, secs)
-            if time.time() - last_prune > 86400:
-                ing.prune()
-                last_prune = time.time()
-        except Exception:
-            logging.exception("ciclo de ingestão falhou")
-        stop.wait(int(cfg["ingest"]["interval"]))
+    try:
+        while not stop.is_set():
+            try:
+                n, secs = ing.run_once()
+                if n:
+                    logging.info("ciclo: %d linhas em %.1fs", n, secs)
+                if time.time() - last_prune > 86400:
+                    ing.prune()
+                    last_prune = time.time()
+            except Exception:
+                logging.exception("ciclo de ingestão falhou")
+            stop.wait(int(cfg["ingest"]["interval"]))
+    finally:
+        ing.close()
 
 
 def cmd_check(cfg):
@@ -43,8 +46,10 @@ def cmd_check(cfg):
     report = {
         "config": cfg.get("_path") or "(somente defaults/env)",
         "log_dir": {"path": p["log_dir"], "exists": os.path.isdir(p["log_dir"]), "access_logs": len(files)},
-        "npm_db": {"path": p["npm_db"], "proxy_hosts": len(sites),
-                   "ua_block_rules": sum(len(s["ua_rules"]) for s in sites)},
+        "npm_db": {"path": p["npm_db"], "exists": os.path.exists(p["npm_db"]),
+                   "readable": os.access(p["npm_db"], os.R_OK),
+                   "mode": "sqlite" if os.path.isfile(p["npm_db"]) else "log-only",
+                   "proxy_hosts": len(sites), "ua_block_rules": sum(len(s["ua_rules"]) for s in sites)},
         "geoip": {k: (p[k], os.path.exists(p[k]) if p[k] else None) for k in ("geoip_city", "geoip_asn")},
         "blocked_ips": len(store.read_blocked_ips(p["nginx_custom_dir"], cfg["ingest"]["blocked_ip_geo_var"])),
         "data_dir": p["data_dir"],
@@ -54,7 +59,7 @@ def cmd_check(cfg):
         "events": len(cfg["events"]), "custom_bots": len(cfg["bots"]["custom"]),
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["log_dir"]["exists"] else 1
+    return 0 if report["log_dir"]["exists"] and report["npm_db"]["exists"] and report["npm_db"]["readable"] else 1
 
 
 def main(argv=None):
@@ -77,15 +82,21 @@ def main(argv=None):
         return cmd_check(cfg)
     if a.command in ("ingest", "reindex"):
         ing = ingest.Ingester(cfg)
-        if a.command == "reindex":
-            ing.reset()
-        n, secs = ing.run_once()
-        print(f"{n} linhas em {secs:.1f}s")
+        try:
+            if a.command == "reindex":
+                ing.reset()
+            n, secs = ing.run_once()
+            print(f"{n} linhas em {secs:.1f}s")
+        finally:
+            ing.close()
         return 0
     stop = threading.Event()
     store.connect(config.db_path(cfg)).close()  # garante o esquema antes da API abrir read-only
-    threading.Thread(target=ingest_loop, args=(cfg, stop), daemon=True, name="ingest").start()
-    srv = api.make_server(api.Api(cfg), cfg)
+    worker = threading.Thread(target=ingest_loop, args=(cfg, stop), daemon=True, name="ingest")
+    worker.start()
+    application = api.Api(cfg)
+    application.ingest_thread = worker
+    srv = api.make_server(application, cfg)
     logging.info("logsNPM %s em http://%s:%s (config: %s)", __version__, cfg["server"]["listen"],
                  cfg["server"]["port"], cfg.get("_path") or "defaults")
     try:
@@ -94,6 +105,8 @@ def main(argv=None):
         pass
     finally:
         stop.set()
+        srv.server_close()
+        worker.join(timeout=30)
     return 0
 
 

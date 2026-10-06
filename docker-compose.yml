@@ -1,28 +1,72 @@
-# Exemplo ao lado do Nginx Proxy Manager oficial (jc21/nginx-proxy-manager).
-# Ajuste ./npm/data para o diretório que o seu NPM monta em /data.
+# logsNPM ao lado do Nginx Proxy Manager. Tudo é ajustado no .env:
+#   cp .env.example .env   # defina pelo menos LOGSNPM_NPM_DATA
+#   docker compose up -d
+# Requer Docker Compose v2.24+ (env_file opcional).
+#
+# Padrão privado: a porta é publicada só em 127.0.0.1 do host. Para expor na rede,
+# mude LOGSNPM_BIND e ative a autenticação (veja .env.example e README).
 services:
   logsnpm:
+    image: ${LOGSNPM_IMAGE:-ghcr.io/matheuscara/logsnpm:latest}
+    # Sem a imagem no registro (ex.: LOGSNPM_IMAGE=logsnpm:local) ou com `up --build`, compila daqui.
     build: .
-    # image: ghcr.io/matheuscara/logsnpm:latest
-    container_name: logsnpm
     restart: unless-stopped
-    ports:
-      - "7881:7881"
+    # UID:GID do processo: precisa LER os arquivos do NPM e ESCREVER no volume de dados.
+    user: "${LOGSNPM_UID:-10001}:${LOGSNPM_GID:-10001}"
+    # Variáveis do app (LOGSNPM_*, LOGSNPM__SEÇÃO__CHAVE) vêm do mesmo .env; só as descomentadas valem.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      LOGSNPM_LOG_DIR: /npm/logs
-      LOGSNPM_NPM_DB: /npm/database.sqlite
-      LOGSNPM_NGINX_CUSTOM_DIR: /npm/nginx/custom
-      LOGSNPM_DEFAULT_TZ: America/Sao_Paulo
-      # LOGSNPM_AUTH_USER: admin
-      # LOGSNPM_AUTH_PASSWORD: troque-isto
-      # LOGSNPM_GEOIP_CITY: /geoip/GeoLite2-City.mmdb
-      # LOGSNPM_GEOIP_ASN: /geoip/GeoLite2-ASN.mmdb
-      # LOGSNPM_CONFIG: /etc/logsnpm/logsnpm.toml
+      # Fixos: casam com `ports:` e com o volume de dados abaixo. Troque a porta do HOST, não esta.
+      LOGSNPM_LISTEN: 0.0.0.0
+      LOGSNPM_PORT: "7881"
+      LOGSNPM_DATA_DIR: /var/lib/logsnpm
+    ports:
+      - "${LOGSNPM_BIND:-127.0.0.1}:${LOGSNPM_HOST_PORT:-7881}:7881"
     volumes:
-      - ./npm/data:/npm:ro            # logs + banco do NPM, somente leitura
-      - logsnpm-data:/var/lib/logsnpm
-      # - ./logsnpm.toml:/etc/logsnpm/logsnpm.toml:ro
-      # - ./geoip:/geoip:ro
+      # Do /data do NPM só o necessário, somente leitura: logs/, database.sqlite e nginx/ (custom/).
+      # Ficam de fora keys.json, custom_ssl/ e access/. Os caminhos precisam existir no host.
+      - type: bind
+        source: "${LOGSNPM_NPM_DATA:?defina LOGSNPM_NPM_DATA no .env (diretório que o NPM monta em /data)}/logs"
+        target: /npm/logs
+        read_only: true
+        bind:
+          create_host_path: false
+      # NPM com MySQL/MariaDB/Postgres não tem este arquivo: LOGSNPM_NPM_DB_FILE=/dev/null (domínios e
+      # regras de 403 passam a vir só de [sites.ID] no logsnpm.toml).
+      - type: bind
+        source: "${LOGSNPM_NPM_DB_FILE:-${LOGSNPM_NPM_DATA}/database.sqlite}"
+        target: /npm/database.sqlite
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${LOGSNPM_NPM_DATA}/nginx"
+        target: /npm/nginx
+        read_only: true
+        bind:
+          create_host_path: false
+      # Banco próprio do logsNPM: volume nomeado (padrão) ou diretório do host (./data, /srv/logsnpm).
+      - ${LOGSNPM_DATA_VOLUME:-logsnpm-data}:/var/lib/logsnpm
+      # Opcional, somente leitura: logsnpm.toml, arquivo de senha, GeoLite2. Diretório vazio = padrões.
+      - ${LOGSNPM_CONFIG_DIR:-./config}:/etc/logsnpm:ro
+      # Opcional, somente leitura: GeoLite2-City.mmdb / GeoLite2-ASN.mmdb (padrão: o diretório de config).
+      - ${LOGSNPM_GEOIP_DIR:-${LOGSNPM_CONFIG_DIR:-./config}}:/geoip:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Para publicar pelo próprio NPM (Proxy Host -> http://logsnpm:7881), entre na rede dele:
+    # networks: [default, npm]
+
+# networks:
+#   npm:
+#     external: true
+#     name: npm_default   # `docker network ls` — a rede do container do NPM
 
 volumes:
   logsnpm-data:

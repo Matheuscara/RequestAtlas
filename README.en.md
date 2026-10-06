@@ -44,61 +44,183 @@ Principles: “not identified as bot” is **not** called human; an HTML request
 
 ## Install
 
-### Docker (next to the official NPM)
+### Docker Compose (next to the official NPM)
 
-```yaml
-services:
-  logsnpm:
-    image: ghcr.io/matheuscara/logsnpm:latest
-    restart: unless-stopped
-    ports: ["7881:7881"]
-    environment:
-      LOGSNPM_LOG_DIR: /npm/logs
-      LOGSNPM_NPM_DB: /npm/database.sqlite
-      LOGSNPM_NGINX_CUSTOM_DIR: /npm/nginx/custom
-      LOGSNPM_LANGUAGE: en
-      LOGSNPM_DEFAULT_TZ: Europe/Berlin
-      LOGSNPM_AUTH_USER: admin
-      LOGSNPM_AUTH_PASSWORD: change-me
-    volumes:
-      - ./npm/data:/npm:ro          # the directory NPM mounts at /data
-      - logsnpm-data:/var/lib/logsnpm
-volumes:
-  logsnpm-data:
+Requires Docker Compose v2.24+. Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi).
+
+```sh
+git clone https://github.com/Matheuscara/logsNPM && cd logsNPM   # or download just docker-compose.yml and .env.example
+cp .env.example .env
+mkdir -p config          # optional: logsnpm.toml, password file, GeoLite2 (so the folder is yours)
+$EDITOR .env             # at least LOGSNPM_NPM_DATA=/path/to/npm/data
+docker compose up -d
+docker compose ps        # "healthy" while the collector completes cycles
 ```
 
-Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi).
+Open `http://127.0.0.1:7881` **on the Docker host itself**: by default the port is only published on `127.0.0.1`. From another machine use a tunnel (`ssh -L 7881:127.0.0.1:7881 user@host`), [expose it with authentication](#access-and-authentication) or [publish it through NPM](#publish-through-npm-reverse-proxy).
+
+Everything is set in `.env`. Host side, read by Compose ([`.env.example`](.env.example) comments are in Portuguese):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LOGSNPM_NPM_DATA` | — (required) | the directory NPM mounts at `/data` (with the official NPM compose, the absolute path of its `./data`) |
+| `LOGSNPM_NPM_DB_FILE` | `$LOGSNPM_NPM_DATA/database.sqlite` | NPM's SQLite; `/dev/null` for NPM on MySQL/MariaDB/Postgres (see below) |
+| `LOGSNPM_BIND` | `127.0.0.1` | host IP the port is published on (`0.0.0.0` = every interface) |
+| `LOGSNPM_HOST_PORT` | `7881` | host port |
+| `LOGSNPM_IMAGE` | `ghcr.io/matheuscara/logsnpm:latest` | image to run, or the tag to build (`logsnpm:local`) |
+| `LOGSNPM_UID` / `LOGSNPM_GID` | `10001` / `10001` | user the process runs as |
+| `LOGSNPM_DATA_VOLUME` | `logsnpm-data` | Docker volume name or host directory for logsNPM's own database |
+| `LOGSNPM_CONFIG_DIR` | `./config` | optional directory mounted at `/etc/logsnpm` |
+| `LOGSNPM_GEOIP_DIR` | the config directory | optional directory with GeoLite2 files, mounted at `/geoip` |
+
+App settings (`LOGSNPM_AUTH_USER`, `LOGSNPM__UI__TITLE`, …) go in the same `.env` and are passed to the container; only uncommented lines apply.
+
+#### What gets mounted
+
+| From | In the container | Mode | Contents |
+|---|---|---|---|
+| `LOGSNPM_NPM_DATA` + `/logs` | `/npm/logs` | read | NPM access logs (required) |
+| `LOGSNPM_NPM_DATA` + `/database.sqlite` (or `LOGSNPM_NPM_DB_FILE`) | `/npm/database.sqlite` | read | NPM proxy hosts, domains and 403 rules |
+| `LOGSNPM_NPM_DATA` + `/nginx` | `/npm/nginx` | read | `custom/` with the `geo $blocked_ip` block (optional) |
+| `LOGSNPM_DATA_VOLUME` | `/var/lib/logsnpm` | write | `logsnpm.db`, logsNPM's aggregates |
+| `LOGSNPM_CONFIG_DIR` | `/etc/logsnpm` | read | `logsnpm.toml`, `password`, GeoLite2 — all optional |
+| `LOGSNPM_GEOIP_DIR` | `/geoip` | read | `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb` (optional) |
+
+- **Only what's needed from NPM, read-only.** `keys.json`, `custom_ssl/` (private keys) and `access/` stay out. `database.sqlite` itself holds sensitive data (NPM user hashes and, with DNS challenges, provider credentials); logsNPM only queries the host tables, but the file is visible inside the container — that's why it runs as non-root, with a read-only filesystem, no capabilities, and is published on `127.0.0.1` by default.
+- NPM paths must exist: nothing is created on the host, and a wrong path fails with `bind source path does not exist`.
+- **NPM on MySQL/MariaDB/Postgres** has no `database.sqlite`: set `LOGSNPM_NPM_DB_FILE=/dev/null`. Logs are still read and classified the same way (bots, status, pages, origin), but domains and User-Agent 403 rules only appear if you declare `domains`/`ua_rules` under `[sites.ID]` in `logsnpm.toml`; forward target, SSL and enabled/removed state stay unavailable.
+- The config *directory* is always mounted, never a lone file: without a `logsnpm.toml` inside, defaults apply. If the folder doesn't exist Docker creates an empty, root-owned one — hence `mkdir -p config`.
+- TOML `[paths]` don't apply in the container: the image sets `LOGSNPM_LOG_DIR=/npm/logs`, `LOGSNPM_NPM_DB=/npm/database.sqlite`, `LOGSNPM_NGINX_CUSTOM_DIR=/npm/nginx/custom`, `LOGSNPM_DATA_DIR=/var/lib/logsnpm` and `LOGSNPM_GEOIP_CITY`/`_ASN=/geoip/GeoLite2-*.mmdb` (missing file = no country/ASN, no error). Inside the container the server always listens on `0.0.0.0:7881`; change the host port with `LOGSNPM_HOST_PORT`, never `server.port`.
+
+The first run processes all available history (≈ 5 million lines in ~40 s on a 2-vCPU LXC) and the container stays `healthy` meanwhile; after that each cycle reads only new lines. The `HEALTHCHECK` probes `/healthz`, which turns `unhealthy` if the collector stops completing cycles.
+
+#### Access and authentication
+
+The default is private: `LOGSNPM_BIND=127.0.0.1`. To open it to the LAN, change the IP **and** enable basic auth:
+
+```sh
+# .env
+LOGSNPM_BIND=192.168.1.10                         # host LAN IP (0.0.0.0 = every interface)
+LOGSNPM_AUTH_USER=admin
+LOGSNPM_AUTH_PASSWORD_FILE=/etc/logsnpm/password
+```
+
+```sh
+openssl rand -base64 24 > config/password && cat config/password    # note the password
+sudo chown 10001:10001 config/password && sudo chmod 0400 config/password   # LOGSNPM_UID:LOGSNPM_GID
+docker compose up -d
+```
+
+- Alternatively: `LOGSNPM_AUTH_PASSWORD='...'` directly in `.env`, or `auth_user`/`auth_password` in the TOML. Don't combine a password file with another password: startup fails.
+- Basic auth is cleartext over HTTP; outside a trusted LAN, publish through NPM with HTTPS.
+- `server.allow_networks` filters by source IP. In Docker, connections to the host's `127.0.0.1` go through docker-proxy and arrive from the Docker network gateway (e.g. `172.18.0.1`); include that network if you use the list.
+- `/healthz` is the only unauthenticated endpoint: it only answers `ok`/`stale`, from loopback or `allow_networks`.
+
+#### Publish through NPM (reverse proxy)
+
+1. Put logsNPM on NPM's Docker network: uncomment the `networks` block in `docker-compose.yml` with the network name (`docker network ls`, e.g. `npm_default`).
+2. In NPM, create a Proxy Host to `http://logsnpm:7881`, with SSL and an Access List. The host port can stay on `127.0.0.1`.
+3. For `allow_networks` to see the visitor's real IP, accept `X-Forwarded-For` **only** from NPM:
+   ```toml
+   [server]
+   trust_x_forwarded_for = true
+   trusted_proxy_networks = ["172.18.0.0/16"]   # docker network inspect npm_default -f '{{(index .IPAM.Config 0).Subnet}}'
+   ```
+   `trust_x_forwarded_for` without `trusted_proxy_networks` is a configuration error. The header is read right to left, skipping trusted proxies, so a client-forged `X-Forwarded-For` doesn't count; from any other source IP it's ignored.
+4. Add the dashboard's domain to `ingest.exclude_hosts` so it doesn't show up in its own statistics.
+
+#### Permissions
+
+- The process runs as `10001:10001` (`LOGSNPM_UID`/`LOGSNPM_GID`), with a read-only root, `/tmp` on tmpfs, `cap_drop: ALL` and `no-new-privileges`.
+- **Reading NPM:** NPM's logs and `database.sqlite` are usually world-readable (`0644`). If not, grant the UID read access with ACLs (e.g. `sudo setfacl -R -m u:10001:rX /path/npm/data/logs && sudo setfacl -d -m u:10001:rX /path/npm/data/logs`, the second one for new files from rotation) or use a GID that can already read them.
+- **Writing data:** the `logsnpm-data` volume is created owned by `10001:10001` (copied from the image). Changed UID/GID? The new user can't write until you fix it: use a host directory with the right owner (`mkdir -p data && sudo chown 1000:1000 data` and `LOGSNPM_DATA_VOLUME=./data`) or fix the existing volume once (`docker run --rm -v <project>_logsnpm-data:/d alpine chown -R 1000:1000 /d`; the name shows in `docker volume ls`).
+- `logsnpm.toml` and `password` in the config directory must be readable by the UID.
+
+#### Published image or local build
+
+- Default: `ghcr.io/matheuscara/logsnpm:latest`. To pin a version, `LOGSNPM_IMAGE=ghcr.io/matheuscara/logsnpm:<tag>` (release tags `X.Y.Z`/`X.Y` and `sha-<commit>`). Update: `docker compose pull && docker compose up -d`.
+- From source: `LOGSNPM_IMAGE=logsnpm:local` and `docker compose up -d --build`. The build context only carries `logsnpm/` and `LICENSE` (`.dockerignore`), so `.env`, `logsnpm.toml`, `config/` and data never end up in the image.
+- The data volume is still `logsnpm-data`: upgrading from the old compose keeps your aggregates.
+
+#### Docker commands
+
+```sh
+docker compose exec logsnpm python -m logsnpm check   # effective configuration and what was found
+docker compose logs -f logsnpm
+
+# reindex (after changing classification rules): stop the service so two ingesters never run at once
+docker compose stop logsnpm
+docker compose run --rm logsnpm reindex
+docker compose start logsnpm
+```
 
 ### Native (same host/LXC as NPM)
 
 ```sh
 git clone https://github.com/Matheuscara/logsNPM /opt/logsnpm
-cp /opt/logsnpm/config.example.toml /etc/logsnpm/logsnpm.toml   # edit it
-LOGSNPM_CONFIG=/etc/logsnpm/logsnpm.toml python3 -m logsnpm check
+mkdir -p /etc/logsnpm && cp /opt/logsnpm/config.example.toml /etc/logsnpm/logsnpm.toml   # edit it
+cd /opt/logsnpm && LOGSNPM_CONFIG=/etc/logsnpm/logsnpm.toml python3 -m logsnpm check
 cp /opt/logsnpm/deploy/logsnpm.service /etc/systemd/system/ && systemctl enable --now logsnpm
 ```
 
-The first run processes all available history (≈ 5 million lines in ~40 s on a 2-vCPU LXC); after that each cycle reads only new lines.
+Outside Docker the server listens on `127.0.0.1:7881` by default. For network access set `server.listen` **and** basic auth (or publish through a reverse proxy, like the example in [`deploy/nginx-npm-custom-http.conf`](deploy/nginx-npm-custom-http.conf)).
 
 ## Customization
 
-Everything lives in `logsnpm.toml` (documented in [`config.example.toml`](config.example.toml)):
+Everything can live in `logsnpm.toml` (documented in [`config.example.toml`](config.example.toml), comments in Portuguese) or in environment variables:
 
 | Section | What it changes |
 |---|---|
 | `[ui]` | title, subtitle, logo, brand gradient, language (`pt-BR`/`en`), default and available time zones, default period, **which pages appear and in what order**, extra navbar links, refresh interval, caveat text |
 | `[ui.colors]` | color of each request type, status class, bot/non-bot and the chart palette |
-| `[sites.ID]` | display name instead of the domain, hide from lists, prefixes/hosts counted as API |
+| `[sites.ID]` | display name instead of the domain, hide from lists, prefixes/hosts counted as API, domains and User-Agent 403 rules (override NPM's database; essential with MySQL/MariaDB/Postgres) |
 | `[bots]` | your own bots (`[[bots.custom]]`), disable built-in signatures, generic regex |
 | `[classify]` | static extensions, API prefixes, “other” paths |
 | `[[events]]` | chart markers with before × after comparison (optionally for one bot) |
 | `[privacy]` | displayed prefix length (/24, /48…) |
-| `[server]` | port, basic auth, allowed networks, `X-Forwarded-For` |
+| `[server]` | address/port, basic auth, allowed networks, `X-Forwarded-For` and trusted proxies |
 | `[ingest]` | interval, retention, ignored hosts, log globs |
 
-Environment variables: `LOGSNPM_CONFIG`, `LOGSNPM_LOG_DIR`, `LOGSNPM_NPM_DB`, `LOGSNPM_NGINX_CUSTOM_DIR`, `LOGSNPM_DATA_DIR`, `LOGSNPM_GEOIP_CITY`, `LOGSNPM_GEOIP_ASN`, `LOGSNPM_LISTEN`, `LOGSNPM_PORT`, `LOGSNPM_AUTH_USER`, `LOGSNPM_AUTH_PASSWORD`, `LOGSNPM_LANGUAGE`, `LOGSNPM_TITLE`, `LOGSNPM_DEFAULT_TZ`.
+**Appearance without editing files:** the “Appearance” button (palette icon in the top bar) previews title, subtitle and colors in your browser only. “Download TOML” saves a `logsnpm-ui.toml` with `[ui]`/`[ui.colors]` to merge into `logsnpm.toml`; it applies to everyone after a restart. “Reset to server defaults” drops the preview.
 
-Changed classification rules (`[classify]`, `[bots]`, `[privacy]`, `exclude_hosts`, `sites.*.api_*`)? Run `logsnpm reindex` — the dashboard tells you when it's needed.
+### File, variables and precedence
+
+The file is the one given by `--config` or `$LOGSNPM_CONFIG` (must exist); otherwise the first that exists of `./logsnpm.toml` and `/etc/logsnpm/logsnpm.toml` — in Docker, `$LOGSNPM_CONFIG_DIR/logsnpm.toml`. On top of it:
+
+**defaults < `logsnpm.toml` < `LOGSNPM_*` shortcuts < `LOGSNPM__SECTION__KEY`**
+
+and finally `LOGSNPM_AUTH_PASSWORD_FILE` fills `server.auth_password` (an error if a password is already set). An unknown option or wrong type stops startup with a message — run `logsnpm check`.
+
+Every TOML option has a variable with **two** underscores:
+
+| TOML | Variable |
+|---|---|
+| `[ui]` `title` | `LOGSNPM__UI__TITLE` |
+| `[ui]` `refresh_seconds` | `LOGSNPM__UI__REFRESH_SECONDS` |
+| `[ui.colors]` (whole table) | `LOGSNPM__UI__COLORS` |
+| `[server]` `allow_networks` | `LOGSNPM__SERVER__ALLOW_NETWORKS` |
+| `[sites.30]` `name` | `LOGSNPM__SITES__30__NAME` |
+| `[[events]]` (whole list) | `LOGSNPM__EVENTS__ITEMS` |
+
+The value is parsed as JSON — number, `true`/`false`, array, object or `"string"` — and falls back to plain text when it isn't valid JSON:
+
+```sh
+LOGSNPM__UI__TITLE=Proxy dashboard                 # text
+LOGSNPM__UI__TITLE='"2026"'                        # text that would parse as a number: JSON quotes
+LOGSNPM__UI__REFRESH_SECONDS=30                    # number
+LOGSNPM__UI__SHOW_CAVEATS=false                    # boolean
+LOGSNPM__UI__ACCENT='["#f97316", "#facc15"]'       # array
+LOGSNPM__UI__COLORS='{"html": "#f97316", "bot": "#a78bfa"}'   # replaces the whole [ui.colors]
+LOGSNPM__EVENTS__ITEMS='[{"ts": "2026-10-05T10:06:16-03:00", "title": "Blocked GPTBot", "bot": "GPTBot"}]'
+```
+
+Tables and arrays given as variables replace the file's ones entirely; `LOGSNPM__SITES__<ID>__<KEY>` changes only that site key. In the Compose `.env`, single-quote JSON and values containing `$` or `#`. For many events or custom bots, `logsnpm.toml` stays more readable.
+
+`LOGSNPM_*` shortcuts (a variable set to an empty value still applies): `LOGSNPM_CONFIG`, `LOGSNPM_LOG_DIR`, `LOGSNPM_NPM_DB`, `LOGSNPM_NGINX_CUSTOM_DIR`, `LOGSNPM_DATA_DIR`, `LOGSNPM_GEOIP_CITY`, `LOGSNPM_GEOIP_ASN`, `LOGSNPM_LISTEN`, `LOGSNPM_PORT`, `LOGSNPM_AUTH_USER`, `LOGSNPM_AUTH_PASSWORD`, `LOGSNPM_AUTH_PASSWORD_FILE`, `LOGSNPM_LANGUAGE`, `LOGSNPM_TITLE`, `LOGSNPM_DEFAULT_TZ`.
+
+### Reindex
+
+Changed classification rules (`[classify]`, `[bots]`, `[privacy]`, `ingest.exclude_hosts`, `sites.*.api_*`, `sites.*.ua_rules`)? Existing data was aggregated with the old rules: stop the service, run `logsnpm reindex` with the same configuration and start it again (in Docker, the three commands above). The dashboard tells you when it's needed. Title, colors and the rest of `[ui]` only need a restart.
 
 **New language:** add `I18N["xx"]` to `logsnpm/web/i18n.js` (key = the pt-BR text) and set `language = "xx"`.
 
@@ -107,7 +229,7 @@ Changed classification rules (`[classify]`, `[bots]`, `[privacy]`, `exclude_host
 ```
 python -m logsnpm serve     # collector + UI/API (default)
 python -m logsnpm ingest    # one cycle and exit
-python -m logsnpm reindex   # wipe aggregates and reprocess everything
+python -m logsnpm reindex   # wipe aggregates and reprocess everything (with the service stopped)
 python -m logsnpm check     # validate config and show what was found
 ```
 
