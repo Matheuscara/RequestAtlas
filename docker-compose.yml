@@ -1,0 +1,28 @@
+# Exemplo ao lado do Nginx Proxy Manager oficial (jc21/nginx-proxy-manager).
+# Ajuste ./npm/data para o diretório que o seu NPM monta em /data.
+services:
+  logsnpm:
+    build: .
+    # image: ghcr.io/SEU_USUARIO/logsnpm:latest
+    container_name: logsnpm
+    restart: unless-stopped
+    ports:
+      - "7881:7881"
+    environment:
+      LOGSNPM_LOG_DIR: /npm/logs
+      LOGSNPM_NPM_DB: /npm/database.sqlite
+      LOGSNPM_NGINX_CUSTOM_DIR: /npm/nginx/custom
+      LOGSNPM_DEFAULT_TZ: America/Sao_Paulo
+      # LOGSNPM_AUTH_USER: admin
+      # LOGSNPM_AUTH_PASSWORD: troque-isto
+      # LOGSNPM_GEOIP_CITY: /geoip/GeoLite2-City.mmdb
+      # LOGSNPM_GEOIP_ASN: /geoip/GeoLite2-ASN.mmdb
+      # LOGSNPM_CONFIG: /etc/logsnpm/logsnpm.toml
+    volumes:
+      - ./npm/data:/npm:ro            # logs + banco do NPM, somente leitura
+      - logsnpm-data:/var/lib/logsnpm
+      # - ./logsnpm.toml:/etc/logsnpm/logsnpm.toml:ro
+      # - ./geoip:/geoip:ro
+
+volumes:
+  logsnpm-data:

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "logsnpm"
+dynamic = ["version"]
+description = "Painel de análise dos access logs do Nginx Proxy Manager: bots, status, páginas e origem."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+geoip = ["maxminddb>=2.0"]
+
+[project.scripts]
+logsnpm = "logsnpm.__main__:main"
+
+[tool.setuptools]
+packages = ["logsnpm"]
+
+[tool.setuptools.dynamic]
+version = { attr = "logsnpm.__version__" }
+
+[tool.setuptools.package-data]
+logsnpm = ["web/*", "web/vendor/*"]

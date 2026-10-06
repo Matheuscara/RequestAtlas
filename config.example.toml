@@ -1,0 +1,100 @@
+# logsNPM — configuração de exemplo. Copie para logsnpm.toml e ajuste.
+# Tudo é opcional: o que não estiver aqui usa o padrão mostrado (comentado).
+# Variáveis de ambiente (LOGSNPM_*) sobrescrevem o arquivo — veja o README.
+# Mudanças em [classify], [bots], [privacy], ingest.exclude_hosts e sites.*.api_* exigem `logsnpm reindex`.
+
+[paths]
+# log_dir = "/data/logs"                    # diretório de logs do NPM (proxy-host-N_access.log + .gz)
+# npm_db = "/data/database.sqlite"          # banco do NPM, aberto SOMENTE LEITURA (nomes de domínio, regras)
+# nginx_custom_dir = "/data/nginx/custom"   # para detectar `geo $blocked_ip { ... }` (opcional)
+# data_dir = "/var/lib/logsnpm"             # onde o logsNPM guarda o próprio banco de agregados
+# geoip_city = ""                           # GeoLite2-City.mmdb (opcional; país no mapa)
+# geoip_asn = ""                            # GeoLite2-ASN.mmdb (opcional; operadora/nuvem)
+
+[ingest]
+# interval = 60                             # segundos entre ciclos de leitura
+# retention_days = 180                      # detalhe por página/IP/UA; o total por hora fica para sempre
+# exclude_hosts = ["painel.minharede.lan"]  # hosts ignorados na ingestão (ex.: o próprio painel)
+# blocked_ip_geo_var = "blocked_ip"         # nome da variável do bloco geo que bloqueia IPs (403 intencional)
+# log_globs = ["proxy-host-*_access.log*", "dead-host-*_access.log*", "redirection-host-*_access.log*",
+#              "fallback_access.log*", "fallback_http_access.log*"]
+
+[server]
+# listen = "0.0.0.0"
+# port = 7881
+# allow_networks = ["192.168.0.0/16", "100.64.0.0/10", "127.0.0.1/32"]   # vazio = qualquer IP
+# auth_user = ""                            # basic auth (defina os dois ou nenhum)
+# auth_password = ""
+# trust_x_forwarded_for = false             # true se estiver atrás de um proxy reverso confiável
+# cache_ttl = 30
+
+[ui]
+# title = "logsNPM"
+# subtitle = "análise de tráfego do NPM"
+# language = "pt-BR"                        # pt-BR | en
+# logo_url = ""                             # URL de uma imagem quadrada; vazio = ícone padrão
+# accent = ["#818cf8", "#22d3ee"]           # gradiente da marca
+# default_period = "7d"                     # 24h | 7d | 30d | all
+# default_tz = "UTC"                        # qualquer fuso IANA, ex.: "America/Sao_Paulo"
+# timezones = ["America/Sao_Paulo", "UTC", { id = "America/Adak", label = "Servidor (−09:00)" }]
+# pages = ["overview", "sites", "bots", "status", "pages", "geo", "health"]   # ordem e quais aparecem
+# refresh_seconds = 60                      # 0 desliga a atualização automática
+# show_caveats = true                       # avisos “HTML ≠ visitante humano”
+# caveat_text = ""                          # substitui o texto do aviso
+
+# Links extras na barra de navegação
+# [[ui.links]]
+# label = "GoAccess"
+# url = "/goaccess/"
+
+# Cores (qualquer chave omitida usa o padrão)
+# [ui.colors]
+# html = "#818cf8"
+# static = "#22d3ee"
+# api = "#fbbf24"
+# other = "#94a3b8"
+# bot = "#a78bfa"
+# nonbot = "#34d399"
+# noua = "#f472b6"
+# s2 = "#34d399"
+# s3 = "#60a5fa"
+# s4 = "#fbbf24"
+# s5 = "#f87171"
+# rule = "#c084fc"
+# s429 = "#fb923c"
+# palette = ["#818cf8", "#22d3ee", "#f472b6", "#fbbf24", "#34d399"]
+
+[privacy]
+# ipv4_prefix = 24                          # redes exibidas como /24; IP completo nunca aparece
+# ipv6_prefix = 48
+
+[classify]
+# static_extensions_extra = ["xml"]
+# api_prefixes_extra = ["/rest/"]           # vale para todos os sites
+# api_host_prefixes = ["api.", "api-"]
+# other_paths_extra = ["/healthz"]
+
+[bots]
+# disable = ["Go-http-client"]              # assinaturas embutidas a ignorar (passam a "não identificado")
+# generic_pattern = "(?i)(bot\\b|crawler|spider)"   # fallback; "" desliga
+
+# Bots próprios (avaliados antes dos embutidos)
+# [[bots.custom]]
+# name = "Meu monitor"
+# group = "monitoring"                      # ai | search | seo | social | monitoring | scanner | tool | custom
+# pattern = "meu-monitor/"
+
+# Ajustes por proxy host (a chave é o ID do NPM)
+# [sites.30]
+# name = "Minha loja"                       # nome exibido no lugar do domínio
+# hidden = false                            # esconde das listas (os números continuam no total)
+# api_prefixes = ["/api/"]
+# api_hosts = ["dados.minhaloja.com"]
+
+# Eventos marcados nos gráficos, com comparação antes × depois na página Status
+# [[events]]
+# ts = 2026-10-05T10:06:16-09:00
+# site = 30                                 # omita para “todos os proxy hosts”
+# bot = "GPTBot"                            # opcional: compara as requisições desse bot
+# title = "GPTBot bloqueado (403)"
+# detail = "Regra no Advanced do proxy host."

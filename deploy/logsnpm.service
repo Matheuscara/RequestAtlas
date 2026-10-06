@@ -1,0 +1,18 @@
+# Instalação nativa (mesma máquina/LXC do NPM). Ajuste caminhos e usuário.
+[Unit]
+Description=logsNPM - painel de análise dos logs do Nginx Proxy Manager
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/logsnpm
+Environment=LOGSNPM_CONFIG=/etc/logsnpm/logsnpm.toml
+ExecStart=/usr/bin/python3 -m logsnpm serve
+Restart=always
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=700M
+
+[Install]
+WantedBy=multi-user.target

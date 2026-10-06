@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>logsNPM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23818cf8'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M8 21l5-6 4 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/">
+        <span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M8 21l5-6 4 4 7-9" /></svg></span>
+        <span class="brand-text"><b>logsNPM</b><small></small></span>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <div class="live" id="live">
+        <span class="dot"></span><span class="live-text">—</span>
+        <button class="icon-btn" id="refresh" data-i18n-title="Atualizar agora"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <section class="filters" id="filters">
+    <div class="filters-inner">
+      <label class="f f-site"><span data-i18n="Domínio">Domínio</span><select id="f-site"></select></label>
+      <div class="f f-period"><span data-i18n="Período">Período</span>
+        <div class="seg" id="f-period">
+          <button data-p="24h">24h</button><button data-p="7d" data-i18n="7 dias">7 dias</button><button data-p="30d" data-i18n="30 dias">30 dias</button><button data-p="all" data-i18n="Tudo">Tudo</button><button data-p="custom" data-i18n="Datas…">Datas…</button>
+        </div>
+      </div>
+      <div class="f f-custom" id="f-custom" hidden>
+        <span data-i18n="De / até">De / até</span>
+        <div class="dates"><input type="date" id="f-from"><input type="date" id="f-to"></div>
+      </div>
+      <label class="f"><span data-i18n="Bot (User-Agent)">Bot (User-Agent)</span><select id="f-bot"></select></label>
+      <label class="f"><span>Status</span><select id="f-status"></select></label>
+      <label class="f"><span data-i18n="Tipo">Tipo</span><select id="f-kind"></select></label>
+      <label class="f"><span data-i18n="Fuso de exibição">Fuso de exibição</span><select id="f-tz"></select></label>
+      <button class="clear" id="f-clear" data-i18n="Limpar">Limpar</button>
+    </div>
+  </section>
+
+  <main id="app" class="page"></main>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
