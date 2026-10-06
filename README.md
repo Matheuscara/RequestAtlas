@@ -1,239 +1,248 @@
 # logsNPM
 
-[![ci](https://github.com/Matheuscara/logsNPM/actions/workflows/ci.yml/badge.svg)](https://github.com/Matheuscara/logsNPM/actions/workflows/ci.yml)
-[![docker](https://github.com/Matheuscara/logsNPM/actions/workflows/docker.yml/badge.svg)](https://github.com/Matheuscara/logsNPM/pkgs/container/logsnpm)
-[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![ci](https://github.com/Matheuscara/logsNPM/actions/workflows/ci.yml/badge.svg)](https://github.com/Matheuscara/logsNPM/actions/workflows/ci.yml) [![docker](https://github.com/Matheuscara/logsNPM/actions/workflows/docker.yml/badge.svg)](https://github.com/Matheuscara/logsNPM/pkgs/container/logsnpm) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **[English](README.en.md)** · Português
 
-Painel de análise dos access logs do [Nginx Proxy Manager](https://nginxproxymanager.com/) — feito para responder o que o GoAccess não responde direito: **quanto do tráfego é bot**, **qual 403 é bloqueio intencional e qual é erro**, e **HTML × estáticos × API** sem misturar métricas.
+**Entenda o tráfego que chega ao seu Nginx Proxy Manager.** Veja o que é HTML, arquivo estático ou API; quais bots aparecem no User-Agent; e se um `403` é um bloqueio esperado ou um erro da aplicação. Sem mexer nos proxy hosts do NPM.
 
-> Projeto independente, não afiliado ao Nginx Proxy Manager.
+![Visão geral do logsNPM, com dados fictícios](docs/screenshots/overview.png)
 
-![Visão geral](docs/screenshots/overview.png)
+> Projeto independente, não afiliado ao Nginx Proxy Manager. As imagens usam [dados fictícios](scripts/gen_demo.py).
 
-<table><tr>
-<td><img src="docs/screenshots/bots.png" alt="Bots"></td>
-<td><img src="docs/screenshots/status.png" alt="Status e antes × depois"></td>
-</tr><tr>
-<td><img src="docs/screenshots/origem.png" alt="Origem"></td>
-<td><img src="docs/screenshots/dominios.png" alt="Domínios"></td>
-</tr></table>
+## Comece pelo seu caso
 
-<sub>Screenshots com dados fictícios gerados por <code>scripts/gen_demo.py</code>.</sub>
+### Tenho o NPM rodando em Docker
 
-## Testar em 1 minuto (sem NPM)
+**Pré-requisito:** Docker Compose v2.24+ e acesso ao diretório que o NPM monta como `/data`.
+
+1. Baixe o projeto e prepare o arquivo de configuração:
+
+   ```sh
+   git clone https://github.com/Matheuscara/logsNPM.git
+   cd logsNPM
+   cp .env.example .env
+   mkdir -p config
+   ```
+
+2. Abra `.env` e preencha **`LOGSNPM_NPM_DATA`** com o caminho *absoluto* da pasta `data` do seu NPM. Se o Compose do NPM diz `./data:/data`, é o `./data` daquele projeto, convertido em caminho absoluto. Por exemplo: `LOGSNPM_NPM_DATA=/srv/nginx-proxy-manager/data`.
+
+3. Suba e confira:
+
+   ```sh
+   docker compose up -d
+   docker compose ps
+   ```
+
+4. Abra **<http://127.0.0.1:7881> no próprio host Docker**. De outro computador, faça um túnel (`ssh -L 7881:127.0.0.1:7881 usuario@host`) ou [publique pelo NPM com HTTPS e controle de acesso](#publicar-pelo-próprio-npm).
+
+A primeira leitura processa os logs existentes. Depois, só lê as linhas novas. País e ASN exigem bases GeoLite2 opcionais; o restante funciona sem elas.
+
+### Quero testar sem ter NPM
 
 ```sh
-git clone https://github.com/Matheuscara/logsNPM && cd logsNPM
+git clone https://github.com/Matheuscara/logsNPM.git
+cd logsNPM
 python3 scripts/gen_demo.py /tmp/logsnpm-demo
-python3 -m logsnpm serve --config /tmp/logsnpm-demo/logsnpm.toml   # http://127.0.0.1:7881
+python3 -m logsnpm serve --config /tmp/logsnpm-demo/logsnpm.toml
 ```
 
-## O que mostra
+Abra <http://127.0.0.1:7881>. O demo cria **logs, domínios e um bloqueio fictícios**; não usa seus dados.
 
-- **Visão geral** — requisições totais, páginas HTML, estáticos, API e outros; bots × não identificados; 403 por regra, 429, 5xx; IPs distintos (rotulado como estimativa).
-- **Domínios** — todos os proxy hosts lidos do banco do NPM (somente leitura), com tendência por site.
-- **Bots** — top bots por User-Agent (GPTBot, Googlebot, Bingbot, ClaudeBot…), evolução diária/horária, grupos (IA, buscadores, SEO, scanners…) e os UAs sem assinatura mais frequentes.
-- **Status & erros** — 403 da regra `if ($http_user_agent ~* …) { return 403; }` separado do 403 da aplicação, 5xx por código e comparação **antes × depois** de eventos que você registra (ex.: “bloqueei o GPTBot”).
-- **Exportar CSV** da tabela de páginas.
-- **Páginas** — caminhos mais pedidos com filtros de domínio, período, status, bot e tipo.
-- **Origem** — mapa por país, ASN, blocos de rede mascarados (/24, /48) e referrers.
-- **Dados** — estado da coleta, arquivos lidos, linhas malformadas e o método de classificação.
+<details>
+<summary>Ver outras telas</summary>
 
-Princípios: “não identificado como bot” **não** é chamado de humano; requisição de HTML **não** é visita, impressão de anúncio ou receita; IP completo nunca aparece.
+| Bots | Status e bloqueios |
+|---|---|
+| ![Bots](docs/screenshots/bots.png) | ![Status](docs/screenshots/status.png) |
 
-## Como funciona
+| Origem | Domínios |
+|---|---|
+| ![Origem](docs/screenshots/origem.png) | ![Domínios](docs/screenshots/dominios.png) |
 
-- Lê `proxy-host-N_access.log` e as rotações `.N.gz` (formatos `proxy` e `standard` do NPM) de forma **incremental**: cada arquivo é identificado pela primeira linha, então `.log → .1.gz → .2.gz` não causa releitura, e o offset é salvo na mesma transação dos agregados (queda no meio não duplica nem perde).
-- O User-Agent é o campo logo após `[Sent-to …]` — nunca a URL nem o referrer (uma URL com “botucatu” não vira bot).
-- Agrega por hora em UTC num SQLite próprio; dia/hora no fuso escolhido são montados na consulta. O offset de cada linha do log é respeitado.
-- Só stdlib do Python 3.11+. `maxminddb` é opcional (país/ASN com GeoLite2).
-- O banco e as configs do NPM são abertos **somente leitura**. O logsNPM nunca altera proxy hosts.
+</details>
 
-## Instalação
+## O que você consegue ver
 
-### Docker Compose (ao lado do NPM oficial)
+- **Visão geral:** total de requisições, HTML, estáticos, API, bots identificados, `403` por regra, `429` e `5xx` — cada coisa no seu lugar.
+- **Domínios e páginas:** tráfego por proxy host; caminhos mais acessados com filtros por período, status, bot e tipo. A tabela de páginas exporta CSV.
+- **Bots e origem:** top bots e evolução por hora/dia; país, ASN, redes mascaradas e referrers.
+- **Status e dados:** falhas reais separadas dos bloqueios intencionais, comparação antes/depois de eventos configurados e estado da leitura dos logs.
 
-Requer Docker Compose v2.24+. Imagens para `linux/amd64` e `linux/arm64` (Raspberry Pi).
+**Limite importante:** uma requisição HTML **não** é visitante humano, anúncio exibido, cadastro nem receita. “Não identificado como bot” também **não** significa humano. IPs distintos são uma **estimativa**, não pessoas; IPs completos não aparecem no painel.
 
-```sh
-git clone https://github.com/Matheuscara/logsNPM && cd logsNPM   # ou baixe só docker-compose.yml e .env.example
-cp .env.example .env
-mkdir -p config          # opcional: logsnpm.toml, arquivo de senha, GeoLite2 (assim a pasta é sua)
-$EDITOR .env             # no mínimo LOGSNPM_NPM_DATA=/caminho/do/npm/data
-docker compose up -d
-docker compose ps        # "healthy" enquanto a coleta completa ciclos
+## Personalize do seu jeito
+
+**Só quero experimentar cores:** clique em **Aparência** (ícone de paleta no topo). Título e cores mudam imediatamente **só neste navegador**. Para aplicar a todos, use **Baixar TOML**, mescle as chaves no seu `config/logsnpm.toml` e reinicie o container. O painel não escreve na configuração do servidor.
+
+**Quero deixar permanente:** crie `config/logsnpm.toml` a partir de [`config.example.toml`](config.example.toml). Exemplo:
+
+```toml
+[ui]
+title = "Meu painel"
+language = "pt-BR"
+default_tz = "America/Sao_Paulo"
+accent = ["#f97316", "#ec4899"]
+pages = ["overview", "sites", "bots", "status", "pages"]
+
+[sites.1]
+name = "Minha loja"
+api_prefixes = ["/api/"]
 ```
 
-Abra `http://127.0.0.1:7881` **no próprio host do Docker**: por padrão a porta só é publicada em `127.0.0.1`. De outra máquina use um túnel (`ssh -L 7881:127.0.0.1:7881 usuario@host`), [exponha com autenticação](#acesso-e-autenticação) ou [publique pelo NPM](#publicar-pelo-npm-proxy-reverso).
+O arquivo pode ajustar marca, idioma, ordem das páginas, cores, bots próprios, classificação de URLs, domínios, eventos e privacidade. A opção [`config.example.toml`](config.example.toml) mostra **todas** as chaves; [`.env.example`](.env.example) mostra os controles do Docker. Configurações simples também podem ser passadas por variáveis de ambiente, como `LOGSNPM__UI__TITLE=Meu painel`.
 
-Todo o ajuste fica no `.env` ([`.env.example`](.env.example) é comentado linha a linha): lado do host (imagem, IP/porta publicados, UID:GID, diretórios) e, no mesmo arquivo, as variáveis do app, repassadas ao container.
+> Mudou a forma de classificar requisições ou bots? [Reprocesse os logs](#reprocessar-depois-de-mudar-as-regras). Mudanças só de aparência exigem apenas reiniciar.
 
-#### O que é montado
+## Antes de expor na rede
 
-| Variável no `.env` | No container | Modo | Conteúdo |
-|---|---|---|---|
-| `LOGSNPM_NPM_DATA` + `/logs` | `/npm/logs` | leitura | access logs do NPM (obrigatório) |
-| `LOGSNPM_NPM_DATA` + `/database.sqlite` (ou `LOGSNPM_NPM_DB_FILE`) | `/npm/database.sqlite` | leitura | proxy hosts, domínios e regras de 403 do NPM |
-| `LOGSNPM_NPM_DATA` + `/nginx` | `/npm/nginx` | leitura | `custom/` com o bloco `geo $blocked_ip` (opcional) |
-| `LOGSNPM_DATA_VOLUME` (padrão: volume `logsnpm-data`) | `/var/lib/logsnpm` | escrita | `logsnpm.db`, os agregados do logsNPM |
-| `LOGSNPM_CONFIG_DIR` (padrão: `./config`) | `/etc/logsnpm` | leitura | `logsnpm.toml`, `password`, GeoLite2 — tudo opcional |
-| `LOGSNPM_GEOIP_DIR` (padrão: o diretório de config) | `/geoip` | leitura | `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb` (opcionais) |
+Por padrão, o Docker publica o painel **apenas em `127.0.0.1`**. Se mudar `LOGSNPM_BIND` para um IP da LAN ou `0.0.0.0`, configure autenticação e, fora de uma LAN confiável, HTTPS. Os logs podem revelar caminhos e hábitos de acesso.
 
-- **Só o necessário do NPM entra, somente leitura.** `keys.json`, `custom_ssl/` (chaves privadas) e `access/` ficam fora. O `database.sqlite` em si guarda dados sensíveis (hashes dos usuários do NPM e, com desafio DNS, credenciais do provedor); o logsNPM só consulta as tabelas de hosts, mas o arquivo fica visível no container — por isso ele roda sem root, com sistema de arquivos somente leitura, sem capabilities e publicado só em `127.0.0.1` por padrão.
-- Os caminhos do NPM precisam existir: nada é criado no host, e um caminho errado falha com `bind source path does not exist`.
-- **NPM com MySQL/MariaDB/Postgres** não tem `database.sqlite`: use `LOGSNPM_NPM_DB_FILE=/dev/null`. Os logs são lidos e classificados igual (bots, status, páginas, origem), mas domínios e regras de 403 por User-Agent só aparecem se você declarar `domains`/`ua_rules` em `[sites.ID]` no `logsnpm.toml`; destino, SSL e estado ativo/removido dos hosts ficam indisponíveis.
-- O diretório de config é sempre montado, nunca um arquivo solto: sem `logsnpm.toml` dentro, valem os padrões. Se a pasta não existir, o Docker cria uma vazia (com dono root) — daí o `mkdir -p config`.
-- Os caminhos `[paths]` do TOML não valem no container: a imagem define `LOGSNPM_LOG_DIR=/npm/logs`, `LOGSNPM_NPM_DB=/npm/database.sqlite`, `LOGSNPM_NGINX_CUSTOM_DIR=/npm/nginx/custom`, `LOGSNPM_DATA_DIR=/var/lib/logsnpm` e `LOGSNPM_GEOIP_CITY`/`_ASN=/geoip/GeoLite2-*.mmdb` (arquivo ausente = sem país/ASN, sem erro). Dentro do container o servidor escuta sempre em `0.0.0.0:7881`; mude a porta do host com `LOGSNPM_HOST_PORT`, nunca `server.port`.
+O logsNPM roda sem root e monta logs e banco do NPM **somente para leitura**. Mesmo assim, `database.sqlite` pode conter dados sensíveis: proteja o container e não exponha o painel sem controle de acesso. O banco **próprio** do logsNPM fica num volume separado.
 
-A primeira coleta processa todo o histórico disponível (≈ 5 milhões de linhas em ~40 s num LXC de 2 vCPU) e o container continua `healthy` durante ela; depois cada ciclo lê só o que é novo. O `HEALTHCHECK` consulta `/healthz`, que fica `unhealthy` se a coleta parar de completar ciclos.
+<details>
+<summary>Configurar usuário e senha</summary>
 
-#### Acesso e autenticação
+No `.env`:
 
-O padrão é privado: `LOGSNPM_BIND=127.0.0.1`. Para abrir na rede local, troque o IP **e** ative basic auth:
-
-```sh
-# .env
-LOGSNPM_BIND=192.168.1.10                         # IP do host na LAN (0.0.0.0 = todas as interfaces)
+```dotenv
 LOGSNPM_AUTH_USER=admin
 LOGSNPM_AUTH_PASSWORD_FILE=/etc/logsnpm/password
+# Se abrir na LAN: LOGSNPM_BIND=192.168.1.10
 ```
 
+Crie a senha no host e deixe-a legível pelo UID do container (padrão `10001`):
+
 ```sh
-openssl rand -base64 24 > config/password && cat config/password    # anote a senha
-sudo chown 10001:10001 config/password && sudo chmod 0400 config/password   # LOGSNPM_UID:LOGSNPM_GID
+openssl rand -base64 24 > config/password
+sudo chown 10001:10001 config/password
+sudo chmod 0400 config/password
 docker compose up -d
 ```
 
-- Alternativa: `LOGSNPM_AUTH_PASSWORD='...'` direto no `.env`, ou `auth_user`/`auth_password` no TOML. Não combine senha em arquivo com outra senha: a inicialização falha.
-- Basic auth trafega em texto claro sobre HTTP; fora de uma LAN confiável, publique pelo NPM com HTTPS.
-- `server.allow_networks` restringe por IP de origem. No Docker, conexões ao `127.0.0.1` do host passam pelo docker-proxy e chegam com o IP do gateway da rede Docker (ex.: `172.18.0.1`); inclua essa rede se usar a lista.
-- `/healthz` é o único endpoint sem autenticação: responde só `ok`/`stale`, aceito do loopback ou de `allow_networks`.
+Basic Auth sobre HTTP não criptografa a senha. Use HTTPS se houver acesso fora de uma rede confiável. `/healthz` é o único endpoint sem login; responde somente `ok` ou `stale`.
 
-#### Publicar pelo NPM (proxy reverso)
+</details>
 
-1. Coloque o logsNPM na rede Docker do NPM: descomente o bloco `networks` no `docker-compose.yml` com o nome da rede (`docker network ls`, ex.: `npm_default`).
-2. No NPM, crie um Proxy Host para `http://logsnpm:7881`, com SSL e uma Access List. A porta do host pode continuar em `127.0.0.1`.
-3. Para que `allow_networks` enxergue o IP real do visitante, aceite `X-Forwarded-For` **somente** vindo do NPM:
-   ```toml
-   [server]
-   trust_x_forwarded_for = true
-   trusted_proxy_networks = ["172.18.0.0/16"]   # docker network inspect npm_default -f '{{(index .IPAM.Config 0).Subnet}}'
-   ```
-   `trust_x_forwarded_for` sem `trusted_proxy_networks` é erro de configuração. O cabeçalho é lido da direita para a esquerda, pulando os proxies confiáveis, então um `X-Forwarded-For` forjado pelo cliente não vale; vindo de qualquer outro IP, é ignorado.
-4. Ponha o domínio do painel em `ingest.exclude_hosts` para ele não entrar nas próprias estatísticas.
+<details>
+<summary>Publicar pelo próprio NPM</summary>
 
-#### Permissões
+1. No [`docker-compose.yml`](docker-compose.yml), descomente o bloco `networks` e indique a rede Docker do NPM (`docker network ls`).
+2. Crie no NPM um Proxy Host apontando para `http://logsnpm:7881`, com **SSL e Access List**. A porta no host pode continuar privada em `127.0.0.1`.
+3. Se usar `server.allow_networks` para filtrar pelo IP real do visitante, configure `trust_x_forwarded_for = true` **e** `trusted_proxy_networks = ["CIDR_DA_REDE_DOCKER_DO_NPM"]` em `[server]`. Sem a lista de proxies confiáveis, a configuração é rejeitada. O cabeçalho é lido da direita para a esquerda para evitar um IP falso enviado pelo cliente.
+4. Inclua o domínio do painel em `ingest.exclude_hosts` para não contar seus próprios acessos.
 
-- O processo roda como `10001:10001` (`LOGSNPM_UID`/`LOGSNPM_GID`), com raiz somente leitura, `/tmp` em tmpfs, `cap_drop: ALL` e `no-new-privileges`.
-- **Leitura do NPM:** os logs e o `database.sqlite` do NPM costumam ser legíveis por todos (`0644`). Se não forem, dê leitura ao UID com ACL (ex.: `sudo setfacl -R -m u:10001:rX /caminho/npm/data/logs && sudo setfacl -d -m u:10001:rX /caminho/npm/data/logs`, a segunda para os arquivos novos da rotação) ou use um GID que já leia esses arquivos.
-- **Escrita dos dados:** o volume `logsnpm-data` nasce com dono `10001:10001` (copiado da imagem). Trocou UID/GID? O novo usuário não consegue gravar até você ajustar: use um diretório do host com o dono certo (`mkdir -p data && sudo chown 1000:1000 data` e `LOGSNPM_DATA_VOLUME=./data`) ou corrija o volume existente uma vez (`docker run --rm -v <projeto>_logsnpm-data:/d alpine chown -R 1000:1000 /d`; o nome aparece em `docker volume ls`).
-- `logsnpm.toml` e `password` no diretório de config precisam ser legíveis pelo UID.
+</details>
 
-#### Imagem publicada ou build local
+## Ajuda para instalar e operar
 
-- Padrão: `ghcr.io/matheuscara/logsnpm:latest`. Para fixar versão, `LOGSNPM_IMAGE=ghcr.io/matheuscara/logsnpm:<tag>` (tags `X.Y.Z`/`X.Y` das releases e `sha-<commit>`). Atualizar: `docker compose pull && docker compose up -d`.
-- Do código-fonte: `LOGSNPM_IMAGE=logsnpm:local` e `docker compose up -d --build`. O contexto de build só leva `logsnpm/` e `LICENSE` (`.dockerignore`), então `.env`, `logsnpm.toml`, `config/` e dados nunca entram na imagem.
-- O volume de dados continua `logsnpm-data`: quem vem do compose antigo mantém os agregados.
+<details>
+<summary>Onde ficam os arquivos no Docker?</summary>
 
-#### Comandos no Docker
+| Origem | Uso | Acesso do logsNPM |
+|---|---|---|
+| `LOGSNPM_NPM_DATA/logs` | Logs ativos e `.gz` do NPM | Somente leitura |
+| `LOGSNPM_NPM_DATA/database.sqlite` | Nomes dos proxy hosts e regras do Advanced | Somente leitura |
+| `LOGSNPM_NPM_DATA/nginx` | Blocos `geo` personalizados, se houver | Somente leitura |
+| `LOGSNPM_DATA_VOLUME` | Agregados do logsNPM | Escrita |
+| `LOGSNPM_CONFIG_DIR` (padrão `./config`) | `logsnpm.toml` e arquivo de senha | Somente leitura |
+
+O Compose monta **só** esses caminhos do NPM; não monta `keys.json`, `custom_ssl/` ou `access/`. Os caminhos de logs, banco e nginx precisam existir, ou o Docker falha sem criar pastas silenciosamente. `LOGSNPM_HOST_PORT` troca a porta no **host**; dentro do container ela permanece `7881`.
+
+`LOGSNPM_IMAGE` escolhe a imagem (padrão `ghcr.io/matheuscara/logsnpm:latest`). Para compilar do código-fonte, use `LOGSNPM_IMAGE=logsnpm:local` e `docker compose up -d --build`. Há imagens para amd64 e arm64.
+
+</details>
+
+<details>
+<summary>Meu NPM usa MySQL/MariaDB, não database.sqlite</summary>
+
+No `.env`, defina `LOGSNPM_NPM_DB_FILE=/dev/null`. Os **logs continuam funcionando**. Como não há banco SQLite para ler, informe no `config/logsnpm.toml` os domínios e as regras que deseja atribuir:
+
+```toml
+[sites.1]
+name = "Minha loja"
+domains = ["loja.exemplo.com", "www.loja.exemplo.com"]
+ua_rules = [{ pattern = "GPTBot", status = 403 }]
+```
+
+O ID `1` vem do nome `proxy-host-1_access.log`. Sem o banco do NPM, destino do proxy, SSL e estado ativado/removido não podem ser exibidos. Se declarar `ua_rules` para um site com SQLite, essa lista **substitui** as regras detectadas no Advanced para esse site.
+
+</details>
+
+<details>
+<summary>Permissões: container não consegue ler logs ou gravar agregados</summary>
+
+O processo roda como `10001:10001` por padrão; `LOGSNPM_UID` e `LOGSNPM_GID` no `.env` podem mudar isso. Ele precisa ler os logs e o `database.sqlite` do NPM e gravar em `LOGSNPM_DATA_VOLUME`.
+
+- Logs sem permissão: dê acesso de leitura ao UID/GID escolhido; para rotações futuras, configure também a ACL padrão no diretório de logs.
+- UID/GID diferente de `10001`: prepare um diretório gravável no host (ex.: `mkdir -p data && sudo chown 1000:1000 data`, com `LOGSNPM_DATA_VOLUME=./data`) ou corrija o dono do volume Docker existente.
+- `config/logsnpm.toml` e `config/password` precisam ser legíveis pelo mesmo UID.
+
+Confira `docker compose logs logsnpm` e `docker compose exec logsnpm python -m logsnpm check`. O `.env.example` documenta os caminhos, UID e GID.
+
+</details>
+
+<details>
+<summary>Instalação nativa, sem Docker</summary>
+
+Requer Python 3.11+ na mesma máquina/LXC que acessa os logs do NPM:
 
 ```sh
-docker compose exec logsnpm python -m logsnpm check   # configuração efetiva e o que foi encontrado
-docker compose logs -f logsnpm
+git clone https://github.com/Matheuscara/logsNPM /opt/logsnpm
+mkdir -p /etc/logsnpm
+cp /opt/logsnpm/config.example.toml /etc/logsnpm/logsnpm.toml
+# Ajuste os caminhos no TOML antes de continuar.
+cd /opt/logsnpm
+LOGSNPM_CONFIG=/etc/logsnpm/logsnpm.toml python3 -m logsnpm check
+cp deploy/logsnpm.service /etc/systemd/system/
+systemctl enable --now logsnpm
+```
 
-# reindex (após mudar regras de classificação): pare o serviço para não haver duas ingestões
+Fora do Docker, `server.listen` é `127.0.0.1` por padrão. Para expor, configure autenticação e um proxy reverso com HTTPS. Há um exemplo em [`deploy/nginx-npm-custom-http.conf`](deploy/nginx-npm-custom-http.conf).
+
+</details>
+
+<details>
+<summary>Variáveis de ambiente e precedência</summary>
+
+A ordem é: **padrões → `logsnpm.toml` → atalhos `LOGSNPM_*` → `LOGSNPM__SEÇÃO__CHAVE`**. `LOGSNPM_AUTH_PASSWORD_FILE` preenche a senha por último e não pode coexistir com outra senha. Opção desconhecida ou de tipo errado impede a inicialização.
+
+Exemplos no `.env`:
+
+```dotenv
+LOGSNPM__UI__TITLE=Painel do proxy
+LOGSNPM__UI__SHOW_CAVEATS=false
+LOGSNPM__UI__ACCENT='["#f97316", "#facc15"]'
+LOGSNPM__UI__PAGES='["overview", "bots", "pages"]'
+LOGSNPM__SITES__1__NAME=Minha loja
+LOGSNPM__EVENTS__ITEMS='[{"ts":"2026-10-05T10:06:16-03:00","title":"Bloqueio do GPTBot","site":1}]'
+```
+
+O valor é JSON para números, booleanos, listas e tabelas; texto simples também é aceito. Uma lista/tabela passada por ambiente **substitui** a do TOML. O mesmo `.env` controla `LOGSNPM_BIND`, `LOGSNPM_HOST_PORT`, `LOGSNPM_UID` e `LOGSNPM_GID` no lado do Compose. A lista completa está em [`.env.example`](.env.example).
+
+</details>
+
+### Reprocessar depois de mudar as regras
+
+Se mudar `[bots]`, `[classify]`, `[privacy]`, `ingest.exclude_hosts` ou `sites.*.api_*/ua_rules`, os agregados antigos mantêm a classificação anterior. Para aplicar a todo o histórico:
+
+```sh
 docker compose stop logsnpm
 docker compose run --rm logsnpm reindex
 docker compose start logsnpm
 ```
 
-### Nativo (mesma máquina/LXC do NPM)
+O painel avisa quando um reindex é necessário. **Não execute duas ingestões ao mesmo tempo.** Mudanças de título e cores não exigem reindex.
 
-```sh
-git clone https://github.com/Matheuscara/logsNPM /opt/logsnpm
-mkdir -p /etc/logsnpm && cp /opt/logsnpm/config.example.toml /etc/logsnpm/logsnpm.toml   # ajuste
-cd /opt/logsnpm && LOGSNPM_CONFIG=/etc/logsnpm/logsnpm.toml python3 -m logsnpm check
-cp /opt/logsnpm/deploy/logsnpm.service /etc/systemd/system/ && systemctl enable --now logsnpm
-```
+<details>
+<summary>Como os números são produzidos?</summary>
 
-Fora do Docker o servidor escuta em `127.0.0.1:7881` por padrão. Para a rede, defina `server.listen` **e** basic auth (ou publique por um proxy reverso, como o exemplo em [`deploy/nginx-npm-custom-http.conf`](deploy/nginx-npm-custom-http.conf)).
+O programa lê `proxy-host-N_access.log` e rotações `.N.gz` incrementalmente. Identifica o arquivo pela primeira linha; salva o offset junto com os agregados no próprio SQLite, evitando releitura e contagem duplicada após queda ou rotação. O User-Agent vem do campo logo após `[Sent-to …]`, nunca da URL ou do referrer. Os totais são agregados por hora em UTC e apresentados no fuso escolhido. O banco e as configurações do NPM são abertos em modo somente leitura.
 
-## Personalização
+`python -m logsnpm serve` executa painel e coletor; `ingest` lê um ciclo; `check` valida caminhos/configuração; `reindex` refaz os agregados. Para desenvolver, rode `python -m unittest discover -s tests`.
 
-Tudo pode ficar em `logsnpm.toml` (comentado em [`config.example.toml`](config.example.toml)) ou em variáveis de ambiente. Destaques:
-
-| Seção | O que muda |
-|---|---|
-| `[ui]` | título, subtítulo, logo, gradiente da marca, idioma (`pt-BR`/`en`), fuso padrão e lista de fusos, período padrão, **quais páginas aparecem e em que ordem**, links extras na barra, intervalo de atualização, texto dos avisos |
-| `[ui.colors]` | cor de cada tipo, classe de status, bot/não-bot e a paleta dos gráficos |
-| `[sites.ID]` | nome exibido no lugar do domínio, esconder das listas, prefixos/hosts que contam como API, domínios e regras de 403 por User-Agent (substituem as do banco do NPM; essenciais com MySQL/MariaDB/Postgres) |
-| `[bots]` | bots próprios (`[[bots.custom]]`), desligar assinaturas embutidas, regex genérica |
-| `[classify]` | extensões estáticas, prefixos de API, caminhos “outros” |
-| `[[events]]` | marcos nos gráficos com comparação antes × depois (opcionalmente de um bot) |
-| `[privacy]` | tamanho do prefixo exibido (/24, /48…) |
-| `[server]` | endereço/porta, basic auth, redes permitidas, `X-Forwarded-For` e proxies confiáveis |
-| `[ingest]` | intervalo, retenção, hosts ignorados, globs dos logs |
-
-**Aparência sem editar arquivo:** o botão “Aparência” (ícone de paleta, na barra do topo) faz uma prévia de título, subtítulo e cores só no seu navegador. “Baixar TOML” gera um `logsnpm-ui.toml` com `[ui]`/`[ui.colors]` para mesclar no `logsnpm.toml`; a mudança vale para todos depois de reiniciar. “Restaurar padrões do servidor” descarta a prévia.
-
-### Arquivo, variáveis e precedência
-
-O arquivo é o de `--config` ou `$LOGSNPM_CONFIG` (precisa existir); sem eles, o primeiro que existir entre `./logsnpm.toml` e `/etc/logsnpm/logsnpm.toml` — no Docker, `$LOGSNPM_CONFIG_DIR/logsnpm.toml`. Por cima dele:
-
-**padrões < `logsnpm.toml` < atalhos `LOGSNPM_*` < `LOGSNPM__SEÇÃO__CHAVE`**
-
-e, por último, `LOGSNPM_AUTH_PASSWORD_FILE` preenche `server.auth_password` (erro se já houver senha). Opção desconhecida ou de tipo errado impede a inicialização com a mensagem do problema — rode `logsnpm check`.
-
-Qualquer opção do TOML vira variável com **dois** sublinhados:
-
-| TOML | Variável |
-|---|---|
-| `[ui]` `title` | `LOGSNPM__UI__TITLE` |
-| `[ui]` `refresh_seconds` | `LOGSNPM__UI__REFRESH_SECONDS` |
-| `[ui.colors]` (tabela inteira) | `LOGSNPM__UI__COLORS` |
-| `[server]` `allow_networks` | `LOGSNPM__SERVER__ALLOW_NETWORKS` |
-| `[sites.30]` `name` | `LOGSNPM__SITES__30__NAME` |
-| `[[events]]` (lista inteira) | `LOGSNPM__EVENTS__ITEMS` |
-
-O valor é lido como JSON — número, `true`/`false`, lista, objeto ou `"texto"` — e, se não for JSON válido, vira texto puro:
-
-```sh
-LOGSNPM__UI__TITLE=Painel do proxy                 # texto
-LOGSNPM__UI__TITLE='"2026"'                        # texto que pareceria número: aspas JSON
-LOGSNPM__UI__REFRESH_SECONDS=30                    # número
-LOGSNPM__UI__SHOW_CAVEATS=false                    # booleano
-LOGSNPM__UI__ACCENT='["#f97316", "#facc15"]'       # lista
-LOGSNPM__UI__COLORS='{"html": "#f97316", "bot": "#a78bfa"}'   # substitui todo o [ui.colors]
-LOGSNPM__EVENTS__ITEMS='[{"ts": "2026-10-05T10:06:16-03:00", "title": "GPTBot bloqueado", "bot": "GPTBot"}]'
-```
-
-Tabelas e listas passadas por variável substituem as do arquivo inteiras; `LOGSNPM__SITES__<ID>__<CHAVE>` muda só aquela chave do site. No `.env` do Compose, use aspas simples em JSON e em valores com `$` ou `#`. Para muitos eventos ou bots próprios, o `logsnpm.toml` continua mais legível.
-
-Atalhos `LOGSNPM_*` (aplicados mesmo vazios): `LOGSNPM_CONFIG`, `LOGSNPM_LOG_DIR`, `LOGSNPM_NPM_DB`, `LOGSNPM_NGINX_CUSTOM_DIR`, `LOGSNPM_DATA_DIR`, `LOGSNPM_GEOIP_CITY`, `LOGSNPM_GEOIP_ASN`, `LOGSNPM_LISTEN`, `LOGSNPM_PORT`, `LOGSNPM_AUTH_USER`, `LOGSNPM_AUTH_PASSWORD`, `LOGSNPM_AUTH_PASSWORD_FILE`, `LOGSNPM_LANGUAGE`, `LOGSNPM_TITLE`, `LOGSNPM_DEFAULT_TZ`.
-
-### Reindex
-
-Mudou regras de classificação (`[classify]`, `[bots]`, `[privacy]`, `ingest.exclude_hosts`, `sites.*.api_*`, `sites.*.ua_rules`)? Os dados antigos foram agregados com as regras anteriores: pare o serviço, rode `logsnpm reindex` com a mesma configuração e inicie de novo (no Docker, os três comandos acima). O painel avisa quando for preciso. Título, cores e o resto de `[ui]` só pedem reinício.
-
-**Novo idioma:** adicione `I18N["xx"]` em `logsnpm/web/i18n.js` (chave = texto em pt-BR) e use `language = "xx"`.
-
-## Comandos
-
-```
-python -m logsnpm serve     # coleta + interface/API (padrão)
-python -m logsnpm ingest    # um ciclo e sai
-python -m logsnpm reindex   # apaga agregados e reprocessa tudo (com o serviço parado)
-python -m logsnpm check     # valida a config e mostra o que encontrou
-```
-
-## Desenvolvimento
-
-```sh
-python -m unittest discover -s tests
-```
+</details>
 
 ## Licença
 
-MIT. Ativos de terceiros em `logsnpm/web/vendor/LICENSES.md` (ECharts Apache-2.0, Inter e JetBrains Mono OFL, Natural Earth domínio público). A base GeoLite2 **não** é distribuída: use a sua (licença MaxMind).
+MIT. Licenças dos recursos incluídos em [`logsnpm/web/vendor/LICENSES.md`](logsnpm/web/vendor/LICENSES.md). A base GeoLite2 **não** é distribuída; use uma sua conforme a licença da MaxMind.
