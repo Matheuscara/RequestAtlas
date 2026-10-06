@@ -6,9 +6,6 @@
 
 **Entenda o tráfego que chega ao seu Nginx Proxy Manager.** Veja o que é HTML, arquivo estático ou API; quais bots aparecem no User-Agent; e se um `403` é um bloqueio esperado ou um erro da aplicação. Sem mexer nos proxy hosts do NPM.
 
-![Visão geral do logsNPM, com dados fictícios](docs/screenshots/overview.png)
-
-> Projeto independente, não afiliado ao Nginx Proxy Manager. As imagens usam [dados fictícios](scripts/gen_demo.py).
 
 ## Comece pelo seu caso
 
@@ -48,6 +45,10 @@ python3 -m logsnpm serve --config /tmp/logsnpm-demo/logsnpm.toml
 ```
 
 Abra <http://127.0.0.1:7881>. O demo cria **logs, domínios e um bloqueio fictícios**; não usa seus dados.
+
+![Visão geral do logsNPM, com dados fictícios](docs/screenshots/overview.png)
+
+> Projeto independente, não afiliado ao Nginx Proxy Manager. As imagens usam [dados fictícios](scripts/gen_demo.py).
 
 <details>
 <summary>Ver outras telas</summary>

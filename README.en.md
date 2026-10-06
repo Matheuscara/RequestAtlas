@@ -6,9 +6,6 @@ English · **[Português](README.md)**
 
 **Understand the traffic reaching your Nginx Proxy Manager.** Separate HTML, static files and API calls; identify declared bots by User-Agent; and tell an intentional `403` block from an application error. No changes to NPM proxy hosts.
 
-![logsNPM overview with generated sample data](docs/screenshots/overview.png)
-
-> Independent project, not affiliated with Nginx Proxy Manager. Screenshots use [generated sample data](scripts/gen_demo.py).
 
 ## Get started
 
@@ -48,6 +45,10 @@ LOGSNPM_LANGUAGE=en python3 -m logsnpm serve --config /tmp/logsnpm-demo/logsnpm.
 ```
 
 Open <http://127.0.0.1:7881>. This creates **fictional** logs, domains and a bot-block event.
+
+![logsNPM overview with generated sample data](docs/screenshots/overview.png)
+
+> Independent project, not affiliated with Nginx Proxy Manager. Screenshots use [generated sample data](scripts/gen_demo.py).
 
 <details>
 <summary>More screenshots</summary>
