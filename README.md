@@ -1,8 +1,34 @@
 # logsNPM
 
+[![ci](https://github.com/Matheuscara/logsNPM/actions/workflows/ci.yml/badge.svg)](https://github.com/Matheuscara/logsNPM/actions/workflows/ci.yml)
+[![docker](https://github.com/Matheuscara/logsNPM/actions/workflows/docker.yml/badge.svg)](https://github.com/Matheuscara/logsNPM/pkgs/container/logsnpm)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[English](README.en.md)** · Português
+
 Painel de análise dos access logs do [Nginx Proxy Manager](https://nginxproxymanager.com/) — feito para responder o que o GoAccess não responde direito: **quanto do tráfego é bot**, **qual 403 é bloqueio intencional e qual é erro**, e **HTML × estáticos × API** sem misturar métricas.
 
 > Projeto independente, não afiliado ao Nginx Proxy Manager.
+
+![Visão geral](docs/screenshots/overview.png)
+
+<table><tr>
+<td><img src="docs/screenshots/bots.png" alt="Bots"></td>
+<td><img src="docs/screenshots/status.png" alt="Status e antes × depois"></td>
+</tr><tr>
+<td><img src="docs/screenshots/origem.png" alt="Origem"></td>
+<td><img src="docs/screenshots/dominios.png" alt="Domínios"></td>
+</tr></table>
+
+<sub>Screenshots com dados fictícios gerados por <code>scripts/gen_demo.py</code>.</sub>
+
+## Testar em 1 minuto (sem NPM)
+
+```sh
+git clone https://github.com/Matheuscara/logsNPM && cd logsNPM
+python3 scripts/gen_demo.py /tmp/logsnpm-demo
+python3 -m logsnpm serve --config /tmp/logsnpm-demo/logsnpm.toml   # http://127.0.0.1:7881
+```
 
 ## O que mostra
 
@@ -10,6 +36,7 @@ Painel de análise dos access logs do [Nginx Proxy Manager](https://nginxproxyma
 - **Domínios** — todos os proxy hosts lidos do banco do NPM (somente leitura), com tendência por site.
 - **Bots** — top bots por User-Agent (GPTBot, Googlebot, Bingbot, ClaudeBot…), evolução diária/horária, grupos (IA, buscadores, SEO, scanners…) e os UAs sem assinatura mais frequentes.
 - **Status & erros** — 403 da regra `if ($http_user_agent ~* …) { return 403; }` separado do 403 da aplicação, 5xx por código e comparação **antes × depois** de eventos que você registra (ex.: “bloqueei o GPTBot”).
+- **Exportar CSV** da tabela de páginas.
 - **Páginas** — caminhos mais pedidos com filtros de domínio, período, status, bot e tipo.
 - **Origem** — mapa por país, ASN, blocos de rede mascarados (/24, /48) e referrers.
 - **Dados** — estado da coleta, arquivos lidos, linhas malformadas e o método de classificação.

@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - name: smoke (demo data)
+        run: |
+          python scripts/gen_demo.py /tmp/demo --days 8
+          python -m logsnpm ingest --config /tmp/demo/logsnpm.toml
+          python -m logsnpm check --config /tmp/demo/logsnpm.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --check logsnpm/web/app.js && node --check logsnpm/web/i18n.js

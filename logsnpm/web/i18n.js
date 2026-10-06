@@ -2,6 +2,7 @@
 window.I18N = {
  "pt-BR": {},
  "en": {
+  "Exportar CSV": "Export CSV",
   "Não identificado como bot": "Not identified as bot",
   "Sem User-Agent": "No User-Agent",
   "Outro bot (genérico)": "Other bot (generic)",

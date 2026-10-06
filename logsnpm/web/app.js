@@ -775,7 +775,7 @@ async function pagePages() {
         <input class="search" id="pq" placeholder="${esc(t("Buscar caminho (ex.: /blog/, contato)…"))}" value="${esc(S.ui.pq)}">
         ${seg("psort", [["hits", t("Mais requisições")], ["bot", t("Mais bots")], ["s4xx", t("Mais 4xx")], ["s5xx", t("Mais 5xx")], ["bytes", t("Mais bytes")]], S.ui.psort)}
         ${seg("pkind", [["", t("Todos")], ["html", "HTML"], ["static", t("Estáticos")], ["api", "API"], ["other", t("Outros")]], S.f.kind)}
-      </div><div class="dim small nowrap">${t("{n} requisições no filtro", { n: n(pg.total_hits) })}</div></div>
+      </div><div class="toolbar"><span class="dim small nowrap">${t("{n} requisições no filtro", { n: n(pg.total_hits) })}</span><button class="btn ghost" id="pcsv">${t("Exportar CSV")}</button></div></div>
       <div class="card-b flush">${pagesTable(pg.rows, pg.total_hits, pg.offset)}${ignoredNote(pg.ignored)}</div>
       <div class="card-b toolbar" style="justify-content:space-between"><span class="dim small">${t("Linhas {a}–{b}", { a: pg.offset + 1, b: pg.offset + pg.rows.length })}</span>
         <div class="toolbar"><button class="btn ghost" id="pprev" ${pg.offset ? "" : "disabled"}>← ${t("anteriores")}</button><button class="btn ghost" id="pnext" ${pg.more ? "" : "disabled"}>${t("próximas")} →</button></div></div></section>`;
@@ -788,6 +788,19 @@ async function pagePages() {
       bindSeg(root, "pkind", (v) => { S.ui.poff = 0; go("pages", { kind: v }); });
       $("#pprev", root).onclick = () => { S.ui.poff = Math.max(0, S.ui.poff - 50); render(true); };
       $("#pnext", root).onclick = () => { S.ui.poff += 50; render(true); };
+      $("#pcsv", root).onclick = async () => {
+        try {
+          const all = await api("pages", { q: S.ui.pq, sort: S.ui.psort, offset: 0, limit: 500 });
+          const cols = ["host", "path", "kind", "hits", "bot", "s2xx", "s3xx", "s4xx", "s5xx", "bytes"];
+          const cell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+          const csv = [cols.join(","), ...all.rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+          a.download = `logsnpm-paginas-${localDateStr(range().from)}_${localDateStr(range().to - 1)}.csv`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (e) { toast(e.message); }
+      };
     },
   };
 }
