@@ -45,6 +45,7 @@ DEFAULTS = {
                  "api_host_prefixes": ["api.", "api-"], "other_paths_extra": []},
     "bots": {"disable": [], "custom": [],
              "generic_pattern": r"(?i)(bot\b|bot/|crawler|spider|crawl|slurp|fetcher|scanner|scraper|archiver|indexer|monitor\b|preview)"},
+    "adguard": {"url": "", "user": "", "password": "", "timeout": 5},
     "sites": {}, "events": [],
 }
 
@@ -140,15 +141,18 @@ def load(path=None):
             cfg[section][key] = _env_value(text)
         else:
             raise ConfigError(f"{var}: opção desconhecida")
-    password_file = os.environ.get("REQUESTATLAS_AUTH_PASSWORD_FILE")
-    if password_file:
-        if cfg["server"]["auth_password"]:
-            raise ConfigError("REQUESTATLAS_AUTH_PASSWORD_FILE não pode ser combinado com auth_password")
+    for var, section, key in (("REQUESTATLAS_AUTH_PASSWORD_FILE", "server", "auth_password"),
+                              ("REQUESTATLAS_ADGUARD_PASSWORD_FILE", "adguard", "password")):
+        password_file = os.environ.get(var)
+        if not password_file:
+            continue
+        if cfg[section][key]:
+            raise ConfigError(f"{var} não pode ser combinado com {section}.{key}")
         try:
             with open(password_file) as file:
-                cfg["server"]["auth_password"] = file.read().rstrip("\r\n")
+                cfg[section][key] = file.read().rstrip("\r\n")
         except OSError as exc:
-            raise ConfigError(f"não foi possível ler REQUESTATLAS_AUTH_PASSWORD_FILE: {exc}") from exc
+            raise ConfigError(f"não foi possível ler {var}: {exc}") from exc
     cfg["_path"] = path
     validate(cfg)
     return cfg
@@ -182,7 +186,7 @@ def validate(cfg):
     for section, defaults in DEFAULTS.items():
         if isinstance(defaults, dict) and section not in ("sites",):
             _table(cfg[section], section, set(defaults))
-    for section in ("paths", "ingest", "server", "ui", "privacy", "classify", "bots"):
+    for section in ("paths", "ingest", "server", "ui", "privacy", "classify", "bots", "adguard"):
         for key, default in DEFAULTS[section].items():
             value = cfg[section][key]
             if type(default) is bool and type(value) is not bool:
@@ -215,10 +219,18 @@ def validate(cfg):
             ZoneInfo(zone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ConfigError(f"ui.timezones: fuso inválido: {zone}") from exc
-    known_pages = {"overview", "sites", "bots", "status", "pages", "geo", "health"}
+    known_pages = {"overview", "sites", "bots", "status", "pages", "geo", "health", "adblock"}
     _strings(ui["pages"], "ui.pages")
     if not ui["pages"] or len(ui["pages"]) != len(set(ui["pages"])) or set(ui["pages"]) - known_pages:
         raise ConfigError(f"ui.pages: opções sem repetição: {', '.join(sorted(known_pages))}")
+    ag = cfg["adguard"]
+    if ag["url"] and not re.match(r"^https?://[^/]", ag["url"]):
+        raise ConfigError("adguard.url deve ser URL http(s), ex.: http://192.168.1.5:3000")
+    if bool(ag["user"]) != bool(ag["password"]):
+        raise ConfigError("adguard.user e adguard.password devem ser definidos juntos")
+    _integer(ag["timeout"], "adguard.timeout", 1, 60)
+    if "adblock" in ui["pages"] and not ag["url"]:
+        raise ConfigError('ui.pages: "adblock" exige adguard.url')
     _strings(ui["accent"], "ui.accent")
     if not 1 <= len(ui["accent"]) <= 2:
         raise ConfigError("ui.accent deve conter uma ou duas cores")

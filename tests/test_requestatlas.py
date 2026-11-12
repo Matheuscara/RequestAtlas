@@ -400,5 +400,81 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(ev["bot_info"]["after_by_status"], [{"status": 403, "rule": 1, "hits": 1}])
 
 
+class AdblockTest(unittest.TestCase):
+    """Aba de anúncios: lê o AdGuard Home com basic auth e falha como 502 quando ele cai."""
+
+    def setUp(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        self.seen = []
+        seen = self.seen
+        body = {
+            "/control/status": {"version": "v0.107.80", "protection_enabled": True, "running": True},
+            "/control/stats": {"time_units": "hours", "dns_queries": [5, 10], "blocked_filtering": [1, 4],
+                               "num_dns_queries": 15, "num_blocked_filtering": 5, "avg_processing_time": 0.0123,
+                               "top_blocked_domains": [{"ads.example": 4}, {"t.example": 1}], "top_clients": [{"192.168.2.1": 15}],
+                               "top_queried_domains": [{"ads.example": 4}],
+                               "top_upstreams_responses": [{"https://dns.example/dns-query": 10}],
+                               "top_upstreams_avg_time": [{"https://dns.example/dns-query": 0.02}]},
+            "/control/filtering/status": {"filters": [{"id": 7, "name": "Lista A", "enabled": True, "rules_count": 100,
+                                                       "last_updated": "2026-11-12T03:18:22Z"}]},
+            "/control/querylog": {"data": [{"time": "2026-11-12T03:19:10.315267295Z", "client": "192.168.2.1",
+                                            "question": {"name": "ads.example", "type": "A"}, "reason": "FilteredBlackList",
+                                            "filterId": 7, "rules": [{"filter_list_id": 7, "text": "||ads.example^"}]}]},
+        }
+
+        class Fake(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append((self.path, self.headers.get("Authorization")))
+                data = json.dumps(body[self.path.split("?")[0]]).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+
+        self.fake = ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=self.fake.serve_forever, daemon=True).start()
+        self.env = Env(adguard={"url": f"http://127.0.0.1:{self.fake.server_address[1]}", "user": "ra", "password": "pw", "timeout": 2},
+                       ui={"pages": ["overview", "adblock"]})
+
+    def tearDown(self):
+        self.fake.shutdown()
+        self.fake.server_close()
+        self.env.close()
+
+    def test_summary_auth_and_upstream_failure(self):
+        svc = api.Api(self.env.cfg)
+        code, out = svc.handle("/api/adblock", "")
+        self.assertEqual(code, 200)
+        self.assertEqual(out["totals"]["blocked"], 5)
+        self.assertEqual(out["top_blocked"][0], {"name": "ads.example", "hits": 4})
+        self.assertEqual(out["recent"][0]["list"], "Lista A")
+        self.assertEqual(out["recent"][0]["ts"], 1794453550)
+        self.assertEqual(len(out["buckets"]), 2)
+        self.assertEqual(out["buckets"][1] - out["buckets"][0], 3600 * 1000)
+        self.assertEqual({a for _, a in self.seen}, {"Basic " + base64.b64encode(b"ra:pw").decode()})
+        self.assertNotIn("pw", json.dumps(svc.ui_config()))
+        self.fake.shutdown()
+        self.fake.server_close()
+        svc.cache.clear()
+        code, out = svc.handle("/api/adblock", "")
+        self.assertEqual(code, 502)
+        self.assertIn("AdGuard", out["error"])
+
+    def test_tab_requires_adguard_url_and_password_file(self):
+        with patch.dict(os.environ, {"REQUESTATLAS__UI__PAGES": '["overview","adblock"]'}):
+            with self.assertRaises(config.ConfigError):
+                config.load(os.devnull)
+        with tempfile.TemporaryDirectory() as d:
+            pwd = os.path.join(d, "ag")
+            with open(pwd, "w") as f:
+                f.write("from-file\n")
+            with patch.dict(os.environ, {"REQUESTATLAS__ADGUARD__URL": "http://10.0.0.2:3000", "REQUESTATLAS__ADGUARD__USER": "ra",
+                                         "REQUESTATLAS_ADGUARD_PASSWORD_FILE": pwd}):
+                self.assertEqual(config.load(os.devnull)["adguard"]["password"], "from-file")
+
+
 if __name__ == "__main__":
     unittest.main()

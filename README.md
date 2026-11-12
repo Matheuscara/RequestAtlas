@@ -70,6 +70,7 @@ Abra <http://127.0.0.1:7881>. O demo cria **logs, domínios e um bloqueio fictí
 - **Domínios e páginas:** tráfego por proxy host; caminhos mais acessados com filtros por período, status, bot e tipo. A tabela de páginas exporta CSV.
 - **Bots e origem:** top bots e evolução por hora/dia; país, ASN, redes mascaradas e referrers.
 - **Status e dados:** falhas reais separadas dos bloqueios intencionais, comparação antes/depois de eventos configurados e estado da leitura dos logs.
+- **Anúncios bloqueados (opcional):** se você usa AdGuard Home, uma aba mostra consultas DNS x bloqueios, domínios mais bloqueados, aparelhos, listas ativas e os últimos bloqueios. Configure `[adguard]` e inclua `"adblock"` em `ui.pages`.
 
 **Limite importante:** uma requisição HTML **não** é visitante humano, anúncio exibido, cadastro nem receita. “Não identificado como bot” também **não** significa humano. IPs distintos são uma **estimativa**, não pessoas; IPs completos não aparecem no painel.
 

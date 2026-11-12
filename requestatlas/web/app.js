@@ -46,8 +46,8 @@ const PALETTE_BUILTIN = [...PALETTE];
 const KIND = () => ({ html: t("Páginas HTML"), static: t("Arquivos estáticos"), api: t("API / dados"), other: t("Outros") });
 const KIND_SHORT = () => ({ html: "HTML", static: t("Estático"), api: "API", other: t("Outro") });
 const BOTFLAG = () => ({ bot: t("Bots identificados"), nonbot: t("Não identificado como bot"), noua: t("Sem User-Agent") });
-const ROUTES = { overview: "", sites: "dominios", bots: "bots", status: "status", pages: "paginas", geo: "origem", health: "dados" };
-const PAGE_LABEL = () => ({ overview: t("Visão geral"), sites: t("Domínios"), bots: "Bots", status: t("Status & erros"), pages: t("Páginas"), geo: t("Origem"), health: t("Dados") });
+const ROUTES = { overview: "", sites: "dominios", bots: "bots", status: "status", pages: "paginas", geo: "origem", adblock: "anuncios", health: "dados" };
+const PAGE_LABEL = () => ({ overview: t("Visão geral"), sites: t("Domínios"), bots: "Bots", status: t("Status & erros"), pages: t("Páginas"), geo: t("Origem"), adblock: t("Anúncios bloqueados"), health: t("Dados") });
 const FILTER_KEYS = ["site", "p", "from", "to", "tz", "bot", "status", "kind"];
 
 /* ------------------------------------------------------------------ utils */
@@ -439,7 +439,7 @@ function syncFilters() {
     a.classList.toggle("active", a.dataset.page === S.page);
     a.href = `#/${ROUTES[a.dataset.page]}${q ? "?" + q : ""}`;
   });
-  $("#filters").hidden = S.page === "health";
+  $("#filters").hidden = S.page === "health" || S.page === "adblock";
 }
 function periodText() {
   const r = range();
@@ -640,7 +640,7 @@ async function render(silent = false) {
   const app = $("#app");
   if (!silent) { disposeCharts(); app.innerHTML = skeleton(); } else app.classList.add("loading-veil");
   try {
-    const fn = { overview: pageOverview, sites: pageSites, bots: pageBots, status: pageStatus, pages: pagePages, geo: pageGeo, health: pageHealth }[S.page];
+    const fn = { overview: pageOverview, sites: pageSites, bots: pageBots, status: pageStatus, pages: pagePages, geo: pageGeo, adblock: pageAdblock, health: pageHealth }[S.page];
     const view = await fn();
     if (seq !== S.seq) return;
     const y = window.scrollY;
@@ -1026,6 +1026,44 @@ async function pageGeo() {
           itemStyle: { areaColor: "#141c2f", borderColor: "rgba(148,163,184,.18)", borderWidth: 0.6 },
           emphasis: { label: { show: false }, itemStyle: { areaColor: "#fbbf24" } }, select: { disabled: true }, data }],
       });
+    },
+  };
+}
+
+/* ---- Anúncios bloqueados (AdGuard Home, somente leitura) */
+async function pageAdblock() {
+  const a = await apiRaw("adblock");
+  const tot = a.totals;
+  const days = Math.round(a.window_hours / 24);
+  const win = a.window_hours >= 48 ? t("{n} dias", { n: days }) : `${a.window_hours} h`;
+  const reason = (r) => ({ FilteredBlackList: t("lista de bloqueio"), FilteredBlockedService: t("serviço bloqueado"), FilteredSafeBrowsing: t("site perigoso"), FilteredParental: t("controle parental"), FilteredSafeSearch: "SafeSearch" }[r] || r);
+  const top = (rows, color) => rows.length ? `<div class="scroll short" style="margin:0 -18px"><table class="tbl"><tbody>${rows.map((r, i) => `<tr><td class="rank">${i + 1}</td><td><b>${esc(r.name)}</b></td>${barCell(r.hits, rows[0].hits, color)}</tr>`).join("")}</tbody></table></div>` : `<div class="empty">${t("Nada ainda.")}</div>`;
+  const html = `${head(t("Anúncios bloqueados"), t("Consultas DNS da casa que o AdGuard Home respondeu com bloqueio (anúncios, rastreadores, telemetria). Os filtros do topo não se aplicam: o período é a janela de estatísticas do próprio AdGuard."), `AdGuard ${esc(a.version || "")} · ${t("últimos {w}", { w: win })}`)}
+    ${a.protection ? "" : notice(`<b>${t("Proteção desligada no AdGuard:")}</b> ${t("nada está sendo bloqueado agora.")}`, "warn")}
+    <div class="grid g-pill">
+      ${pill({ label: t("Consultas DNS"), value: nc(tot.queries), color: C.html, sub: t("tempo médio {ms} ms", { ms: fnum(tot.avg_ms) }) })}
+      ${pill({ label: t("Bloqueadas"), value: nc(tot.blocked), color: C.s5, sub: t("{p} das consultas", { p: pct(tot.blocked, tot.queries) }) })}
+      ${pill({ label: t("Sites perigosos"), value: n(tot.safebrowsing), color: C.s4, sub: t("navegação segura") })}
+      ${pill({ label: t("Listas ativas"), value: n(a.lists.filter((l) => l.enabled).length), color: C.static, sub: t("{n} regras", { n: nc(sum(a.lists.filter((l) => l.enabled).map((l) => l.rules))) }) })}
+    </div>
+    ${card(t("Consultas x bloqueios"), t("Por {b}, no fuso {tz}", { b: a.bucket === "hour" ? t("hora") : t("dia"), tz: esc(tzLabel()) }), `<div class="chart" id="ch-ad"></div>`, "", "mt")}
+    <div class="grid g-2 mt">
+      ${card(t("Domínios mais bloqueados"), t("Anúncio, rastreador ou telemetria — um app pode repetir a mesma consulta muitas vezes"), top(a.top_blocked, "rgba(248,113,113,.4)"))}
+      ${card(t("Aparelhos que mais consultam"), t("IP visto pelo AdGuard. Pelo MikroTik, todos aparecem como o roteador."), top(a.top_clients, "rgba(34,211,238,.35)"))}
+    </div>
+    <div class="grid g-2 mt">
+      ${card(t("Domínios mais consultados"), "", top(a.top_queried, "rgba(129,140,248,.4)"))}
+      ${card(t("Listas e servidores DNS"), "", `<table class="tbl"><tbody>${a.lists.map((l) => `<tr><td><b>${esc(l.name)}</b><div class="host">${l.updated ? t("atualizada {d}", { d: fmtDT(Date.parse(l.updated) / 1000, true) }) : ""}</div></td><td>${l.enabled ? `<span class="badge b-ok">${t("ativa")}</span>` : `<span class="badge b-off">${t("desativada")}</span>`}</td><td class="num">${n(l.rules)}</td></tr>`).join("")}
+        ${a.upstreams.map((u) => `<tr><td class="mono small">${esc(u.name)}</td><td class="dim small">${fnum(u.avg_ms)} ms</td><td class="num">${n(u.hits)}</td></tr>`).join("")}</tbody></table>`)}
+    </div>
+    ${card(t("Últimos bloqueios"), t("100 mais recentes do log de consultas"), a.recent.length ? `<div class="scroll" style="margin:0 -18px;max-height:520px"><table class="tbl"><thead><tr><th>${t("Quando")}</th><th>${t("Domínio")}</th><th>${t("Aparelho")}</th><th>${t("Motivo")}</th><th>${t("Regra / lista")}</th></tr></thead><tbody>
+      ${a.recent.map((r) => `<tr><td class="nowrap small">${fmtDT(r.ts)}</td><td><b>${esc(r.domain)}</b> <span class="dim small">${esc(r.type)}</span></td><td class="mono small">${esc(r.client_name || r.client)}</td><td><span class="badge b-err">${esc(reason(r.reason))}</span></td><td class="small"><span class="rx">${esc(r.rule)}</span><div class="host">${esc(r.list)}</div></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">${t("Nenhum bloqueio registrado ainda.")}</div>`, "", "mt")}`;
+  return {
+    html,
+    mount(root) {
+      const allowed = a.queries.map((q, i) => Math.max(0, q - (a.blocked[i] || 0)));
+      timeChart($("#ch-ad", root), { buckets: a.buckets, bucket: a.bucket, series: [
+        { name: t("Liberadas"), data: allowed, color: C.s2 }, { name: t("Bloqueadas"), data: a.blocked, color: C.s5 }] });
     },
   };
 }

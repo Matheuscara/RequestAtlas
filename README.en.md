@@ -70,6 +70,7 @@ Open <http://127.0.0.1:7881>. This creates **fictional** logs, domains and a bot
 - **Domains and pages:** traffic per proxy host and top paths filtered by period, status, bot and type; CSV export.
 - **Bots and origin:** top bots and hourly/daily trends; country, ASN, masked networks and referrers.
 - **Status and data:** real failures vs expected blocks, before/after event comparisons and log-ingestion status.
+- **Blocked ads (optional):** if you run AdGuard Home, a tab shows DNS queries vs blocks, top blocked domains, devices, active lists and the latest blocks. Configure `[adguard]` and add `"adblock"` to `ui.pages`.
 
 **Important limit:** an HTML request is **not** a human visitor, ad impression, signup or revenue. “Not identified as bot” does **not** mean human. Distinct IPs are an **estimate**, not people; full IPs are not displayed.
 

@@ -9,6 +9,8 @@ import mimetypes
 import os
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import OrderedDict, defaultdict
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +35,10 @@ def valid_tz(tz):
 
 
 class BadRequest(Exception):
+    pass
+
+
+class UpstreamError(Exception):
     pass
 
 
@@ -652,9 +658,65 @@ class Api:
             **self.clf.describe(),
         }
 
+    # ------------------------------------------------------------------ AdGuard Home (somente leitura)
+    def adguard(self, path):
+        ag = self.cfg["adguard"]
+        req = urllib.request.Request(ag["url"].rstrip("/") + "/control/" + path)
+        if ag["user"]:
+            token = base64.b64encode(f"{ag['user']}:{ag['password']}".encode()).decode()
+            req.add_header("Authorization", "Basic " + token)
+        try:
+            with urllib.request.urlopen(req, timeout=ag["timeout"]) as res:
+                return json.load(res)
+        except urllib.error.HTTPError as e:
+            raise UpstreamError(f"AdGuard respondeu HTTP {e.code} em /control/{path.split('?')[0]}") from e
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            raise UpstreamError(f"AdGuard indisponível: {getattr(e, 'reason', e)}") from e
+
+    def adblock(self, p):
+        """Resumo do AdGuard Home: janela de estatísticas dele (não usa os filtros do painel)."""
+        if not self.cfg["adguard"]["url"]:
+            raise BadRequest("adguard.url não configurado")
+        status = self.adguard("status")
+        stats = self.adguard("stats")
+        lists = self.adguard("filtering/status")
+        log_ = self.adguard("querylog?response_status=blocked&limit=100")
+        names = {f["id"]: f["name"] for f in (lists.get("filters") or []) + (lists.get("whitelist_filters") or [])}
+        hours = stats.get("time_units") != "days"
+        step = 3600 if hours else 86400
+        now = int(time.time())
+        last = now - now % 3600
+        n = len(stats.get("dns_queries") or [])
+        top = lambda key: [{"name": k, "hits": v} for d in stats.get(key) or [] for k, v in d.items()]
+        recent = []
+        for r in log_.get("data") or []:
+            fid = r.get("filterId") or next((x.get("filter_list_id") for x in r.get("rules") or []), None)
+            recent.append({
+                "ts": int(dt.datetime.fromisoformat(r["time"][:26].rstrip("Z") + "+00:00").timestamp()) if r.get("time") else None,
+                "domain": r.get("question", {}).get("name", ""), "type": r.get("question", {}).get("type", ""),
+                "client": r.get("client", ""), "client_name": (r.get("client_info") or {}).get("name", ""),
+                "reason": r.get("reason", ""), "rule": r.get("rule") or next((x.get("text") for x in r.get("rules") or []), ""),
+                "list": names.get(fid, "") if fid else "",
+            })
+        return {
+            "version": status.get("version"), "protection": bool(status.get("protection_enabled")), "running": bool(status.get("running")),
+            "window_hours": n * (1 if hours else 24), "bucket": "hour" if hours else "day",
+            "buckets": [(last - (n - 1 - i) * step) * 1000 for i in range(n)],
+            "queries": stats.get("dns_queries") or [], "blocked": stats.get("blocked_filtering") or [],
+            "totals": {"queries": stats.get("num_dns_queries", 0), "blocked": stats.get("num_blocked_filtering", 0),
+                       "safebrowsing": stats.get("num_replaced_safebrowsing", 0), "parental": stats.get("num_replaced_parental", 0),
+                       "avg_ms": round(1000 * (stats.get("avg_processing_time") or 0), 1)},
+            "top_blocked": top("top_blocked_domains"), "top_queried": top("top_queried_domains"), "top_clients": top("top_clients"),
+            "upstreams": [{"name": k, "hits": v, "avg_ms": round(1000 * next((t.get(k, 0) for t in stats.get("top_upstreams_avg_time") or [] if k in t), 0), 1)}
+                          for d in stats.get("top_upstreams_responses") or [] for k, v in d.items()],
+            "lists": [{"name": f["name"], "enabled": f["enabled"], "rules": f.get("rules_count", 0), "updated": f.get("last_updated")}
+                      for f in lists.get("filters") or []],
+            "recent": recent,
+        }
+
     ROUTES = {"config": "ui_config", "meta": "meta", "overview": "overview", "timeseries": "timeseries", "bots": "bots",
               "status": "status", "events": "events", "pages": "pages", "geo": "geo", "referrers": "referrers",
-              "uas": "uas", "health": "health"}
+              "uas": "uas", "health": "health", "adblock": "adblock"}
 
     def handle(self, path, query):
         name = path.strip("/").split("/")[-1]
@@ -667,6 +729,8 @@ class Api:
             return 200, self.cached(f"{name}?{query}", lambda: getattr(self, meth)(p), ttl)
         except BadRequest as e:
             return 400, {"error": str(e)}
+        except UpstreamError as e:
+            return 502, {"error": str(e)}
         except ValueError as e:
             return 400, {"error": f"parâmetro inválido: {e}"}
 
